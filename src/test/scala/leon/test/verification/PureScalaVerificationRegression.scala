@@ -5,7 +5,7 @@ package leon.test.verification
 import leon._
 import leon.verification.AnalysisPhase
 
-import _root_.smtlib.interpreters._
+import smtlib.interpreters._
 
 // If you add another regression test, make sure it contains one object whose name matches the file name
 // This is because we compile all tests from each folder separately.
