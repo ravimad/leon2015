@@ -3,10 +3,10 @@ import leon.annotation._
 
 object Graph {
 
-  case class Node(id: Int)
+  case class Node(id: BigInt)
   case class Edge(src: Node, dst: Node)
   //a graph is a set of nodes with ids 1...nv and a mapping from vertices to incident edges
-  case class Graph(nv: Int, adjlist: Map[Node, NodeList])
+  case class Graph(nv: BigInt, adjlist: Map[Node, NodeList])
   sealed abstract class NodeList
   case class Cons(node: Node, tail: NodeList) extends NodeList
   case class Nil() extends NodeList
@@ -32,7 +32,7 @@ object Graph {
   def validNode(node: Node, graph: Graph) : Boolean = {
     node.id >= 1 && node.id <= graph.nv && 
     		graph.adjlist.isDefinedAt(node) 
-  }
+  }  
   
   //checks if edge targets refer to valid vertices
   def validNodes(nodes: NodeList, graph: Graph) : Boolean = {
@@ -42,36 +42,39 @@ object Graph {
       case Nil() => true
     }
   }
-  
-  def validAdjList(nid: Int, graph: Graph) : Boolean = {
-    require(nid >= 1)    
-    if(nid > graph.nv) true
-    else {
-      graph.adjlist.isDefinedAt(Node(nid)) && 
-      	validNodes(graph.adjlist(Node(nid)), graph) && 
-      	validAdjList(nid + 1, graph)             
-    }
+
+  def validAdjList(nid: BigInt, graph: Graph): Boolean = {
+    require(nid >= 1 &&  nid <= graph.nv)
+    graph.adjlist.isDefinedAt(Node(nid)) &&
+      validNodes(graph.adjlist(Node(nid)), graph) &&
+      {
+        if (nid + 1 <= graph.nv)
+          validAdjList(nid + 1, graph)
+        else
+          true
+      }
   } 
   
   def validGraph(graph : Graph) : Boolean ={
     graph.nv >= 1 && validAdjList(1, graph)     
   }
+   
   
-  def validNodelist(g: Graph, nodes: NodeList) : Boolean = {
+  /*def validNodelist(g: Graph, nodes: NodeList) : Boolean = {
     nodes match {
       case Nil() =>
         true
       case Cons(x, tail) =>
         g.adjlist.isDefinedAt(x) && validNodelist(g, tail)
     }
-  }
+  }*/
   
   def validWorklist(g: Graph, wl: Worklist) : Boolean = {
     wl match {
       case WNil() =>
         true
       case WCons(succs, rest) => 
-        validNodelist(g, succs) && validWorklist(g, rest)
+        validNodes(succs, g) && validWorklist(g, rest)
     }
   }
 
@@ -102,7 +105,7 @@ object Graph {
 
   //a DFS operation on graphs
   def dfs(g: Graph, start: Node): Set[Node] = {
-    require(validGraph(g) && g.adjlist.isDefinedAt(start))
+    require(validGraph(g) && validNode(start, g))
 
     val initVisited = Set(start)
     val initWL = WCons(g.adjlist(start), WNil())
