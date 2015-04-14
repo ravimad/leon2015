@@ -14,7 +14,7 @@ object GraphDFS {
         val newgraph = removeSuccEdges(g, n) // constant time
         val (newstack, appendTime) = append(succs, tail) //O(succs) time        
         val (reach, recTime) = dfs(newgraph, newstack)
-        (reach, appendTime + recTime + 1)
+        (Cons(n, reach), appendTime + recTime + 1)
     }
   } ensuring (res => res._2 <= 6 * edgeSize(g) + 2 * size(stack) + 1)
 }

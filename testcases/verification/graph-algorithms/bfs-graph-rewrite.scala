@@ -25,7 +25,7 @@ object GraphBFS {
         val newgraph = removeSuccEdges(g, n)
         val (newqueue, appendTime) = appendQueue(tail, succs) //time O(succs)
         val (reach, recTime) = bfs(newgraph, newqueue)
-        (reach, appendTime + recTime + 1)
+        (Cons(n, reach), appendTime + recTime + 1)
     }
   } ensuring (res => res._2 <= 6 * edgeSize(g) + 2 * size(queue) + 1)
   
