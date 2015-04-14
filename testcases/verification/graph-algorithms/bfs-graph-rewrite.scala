@@ -14,20 +14,22 @@ object GraphBFS {
     (res, size(elems) + 1)
   }
   
-  def succsSize(g: Graph, nl : NodeList) : BigInt = {
-    require(validGraph(g) && contents(nl).subsetOf(contents(g.nodes)) )
-    
-    nl match {
-      case Nil() =>
-        0
-      case Cons(n, tail) =>
-        size(getSuccs(g, n)) + succsSize(g, tail)
-    } 
-  }
+//  def succsSize(g: Graph, nl : NodeList) : BigInt = {
+//    require(validGraph(g) && contents(nl).subsetOf(contents(g.nodes)) )
+//    
+//    nl match {
+//      case Nil() =>
+//        0
+//      case Cons(n, tail) =>
+//        size(getSuccs(g, n)) + succsSize(g, tail)
+//    } 
+//  }
   
-  def bfs(g: Graph, queue: NodeList): (NodeList, Graph, BigInt) = {
+  def bfs(g: Graph, orig: Graph, queue: NodeList): (NodeList, Graph, BigInt) = {
     require(validGraph(g) &&
-        isDistinct(queue) && contents(queue).subsetOf(contents(g.nodes)))        
+        isDistinct(queue) && contents(queue).subsetOf(contents(g.nodes))) 
+        //&& edgeSize(g) <= edgeSize(orig))
+        
     queue match {
       case Nil() =>
         (Nil(), g, 1)
@@ -35,11 +37,11 @@ object GraphBFS {
         val succs = getSuccs(g, n) //constant time       
         val newgraph = removeSuccEdges(g, n)
         val (newqueue, appendTime) = appendQueue(tail, succs) //time O(succs)
-        val (reach, finalg, recTime) = bfs(newgraph, newqueue)
+        val (reach, finalg, recTime) = bfs(newgraph, orig, newqueue)
         (Cons(n, reach), finalg, appendTime + recTime + 1)
     }
-  } ensuring (res => contents(res._1).subsetOf(contents(g.nodes)) && 
-		  edgeSize(res._2) == edgeSize(g) - succsSize(g, res._1))
+  } ensuring (res => contents(res._1).subsetOf(contents(g.nodes))) 
+		  //edgeSize(res._2) == edgeSize(g) - sumSuccs(orig, res._1))
   
   //ensuring (res => res._2 <= 6 * edgeSize(g) + 2 * size(queue) + 1)
   
