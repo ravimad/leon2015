@@ -13,44 +13,37 @@ object GraphBFS {
     val (res, t) = append(q, elems)
     (res, size(elems) + 1)
   }
-  
-//  def succsSize(g: Graph, nl : NodeList) : BigInt = {
-//    require(validGraph(g) && contents(nl).subsetOf(contents(g.nodes)) )
-//    
-//    nl match {
-//      case Nil() =>
-//        0
-//      case Cons(n, tail) =>
-//        size(getSuccs(g, n)) + succsSize(g, tail)
-//    } 
-//  }
-  
-  def bfs(g: Graph, orig: Graph, queue: NodeList): (NodeList, Graph, BigInt) = {
+    
+  def bfs(g: Graph, queue: NodeList): (Graph, NodeList, BigInt) = {
     require(validGraph(g) &&
-        isDistinct(queue) && contents(queue).subsetOf(contents(g.nodes))) 
-        //&& edgeSize(g) <= edgeSize(orig))
+        isDistinct(queue) && contents(queue).subsetOf(contents(g.nodes)))        
         
     queue match {
       case Nil() =>
-        (Nil(), g, 1)
+        (g, Nil(), 1)
       case Cons(n, tail) =>
         val succs = getSuccs(g, n) //constant time       
         val newgraph = removeSuccEdges(g, n)
         val (newqueue, appendTime) = appendQueue(tail, succs) //time O(succs)
-        val (reach, finalg, recTime) = bfs(newgraph, orig, newqueue)
-        (Cons(n, reach), finalg, appendTime + recTime + 1)
+        val (finalg, reach, recTime) = bfs(newgraph, newqueue)
+        (finalg, Cons(n, reach), appendTime + recTime + 1)
     }
-  } ensuring (res => contents(res._1).subsetOf(contents(g.nodes))) 
-		  //edgeSize(res._2) == edgeSize(g) - sumSuccs(orig, res._1))
+  } ensuring (res => //invaraints of resg
+    	validGraph(res._1) && 
+    	contents(res._1.nodes) == contents(g.nodes) && // only edges are removed
+    	res._3 <= 6 * (edgeSize(g) - edgeSize(res._1)) + 2 * size(queue) + 1)  
   
-  //ensuring (res => res._2 <= 6 * edgeSize(g) + 2 * size(queue) + 1)
-  
-  /*def bfsVertex(g: Graph, v : Node) : (NodeList, BigInt) = {
+  def bfsVertex(g: Graph, v : Node) : (Graph, NodeList, BigInt) = {
     require(validGraph(g) && contents(g.nodes).contains(v))
     
-    bfs(g, Cons(v, Nil()))
+    val (rg, rl, t) = bfs(g, Cons(v, Nil()))
+    (rg, rl, t + 1)
     
-  } *///ensuring (res => res._2 <= 6 * edgeSize(g) + 3)
+  } ensuring (res => res._3 <= 6 * (edgeSize(g) - edgeSize(res._1)) + 4)
   
+  def bfsComplete(g: Graph) : (NodeList, BigInt) = {
+    require(validGraph(g))    
+    
+  }
   
 }
