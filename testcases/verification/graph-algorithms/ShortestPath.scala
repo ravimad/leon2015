@@ -61,4 +61,5 @@ object ShortestPath {
     	validGraph(res._1) && 
     	contents(res._1.nodes) == contents(g.nodes) && // only edges are removed
     	res._4 <= 2*(edgeSize(g) - edgeSize(res._1)) + size(queue) + 1)   
+   //TODO: can we prove an O(|V|) bound on the recursive invocations.
 }
