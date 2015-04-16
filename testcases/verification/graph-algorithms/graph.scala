@@ -114,19 +114,18 @@ object Graph {
     }
   }
 
-  def append(l1: NodeList, l2: NodeList): (NodeList, BigInt) = {
-    require(isDistinct(l1) && isDistinct(l2))
+  def append(l1: NodeList, l2: NodeList): (NodeList, BigInt) = {    
     l1 match {
       case Nil() =>
         (l2, 1)
       case Cons(n, tail) =>
         val (res, t) = append(tail, l2)
-        if (!contains(res, n))
+        if (!contains(res, n)) //the time for this is not included
           (Cons(n, res), t + 1)
         else
           (res, t + 1)
     }
-  } ensuring (res => isDistinct(res._1) &&    
+  } ensuring (res => (!isDistinct(l1) || !isDistinct(l2) || isDistinct(res._1)) &&    
     contents(res._1) == contents(l1) ++ contents(l2) &&
     size(res._1) <= size(l1) + size(l2) &&
     res._2 <= size(l1) + 1)
