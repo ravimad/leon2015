@@ -40,8 +40,6 @@ object ShortestPath {
     }
   }   
     
-  //the last parameter only bounds the number of iteration of the recursion.
-  //it has to multiplied with the time of `removeMin` to obtain  an appropriate bound. 
   def shortestPath(g: Graph, queue: NodeList, dist : Map[Node,BigInt], prev: Map[Node,Node])
   	: (Graph, Map[Node, BigInt], Map[Node,Node], BigInt) = {  	  
     require(validGraph(g) && contents(queue).subsetOf(contents(g.nodes)))             
@@ -55,11 +53,12 @@ object ShortestPath {
         //update the dist and prev
         val (dist1, prev1) = updateDist(g, minElem, succs, dist, prev)  //O(succs)        
         val (fg, dist2, prev2, recTime) = shortestPath(newgraph, nqueue, dist1, prev1)
-        (fg, dist2, prev2, size(succs) + recTime + 1)
+        (fg, dist2, prev2, size(queue) + size(succs) + recTime + 1)
     }
   } ensuring (res => //invaraints of resg
     	validGraph(res._1) && 
     	contents(res._1.nodes) == contents(g.nodes) && // only edges are removed
-    	res._4 <= 2*(edgeSize(g) - edgeSize(res._1)) + size(queue) + 1)   
-   //TODO: can we prove an O(|V|) bound on the recursive invocations.
+    	res._4 <= 2*(edgeSize(g) - edgeSize(res._1)) + size(queue) * size(queue) + size(queue) + 1)   
+    	
+   //this would given a O(|E| + |V|^2) bound 
 }
