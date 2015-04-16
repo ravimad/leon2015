@@ -2,7 +2,7 @@ import leon.annotation._
 import Graph._
 
 object ShortestPath {  
-  //time ?
+  
   def removeMin(q : NodeList, dist: Map[Node,BigInt]) : (Node, NodeList) ={
     require(size(q) >= 1)    
     q match {
@@ -18,7 +18,7 @@ object ShortestPath {
   } ensuring(res => size(res._2) == size(q) - 1 && 
       contents(res._2).subsetOf(contents(q)) &&
       contains(q, res._1))
-  
+        
   def weight(g: Graph, src: Node, dst: Node) : BigInt ={
     //for now implementing this as a constant
     1
@@ -30,7 +30,7 @@ object ShortestPath {
       case Nil() => 
         (dist, prev)
       case Cons(n, tail) =>
-        val alt = dist(root) + weight(g, root, n)
+        val alt = dist(root) + weight(g, root, n) //this is a consant time operation
         val (ndist, nprev) = if(dist(n) <= alt) {
           (dist, prev)
         } else {
@@ -40,6 +40,8 @@ object ShortestPath {
     }
   }   
     
+  //the last parameter only bounds the number of iteration of the recursion.
+  //it has to multiplied with the time of `removeMin` to obtain  an appropriate bound. 
   def shortestPath(g: Graph, queue: NodeList, dist : Map[Node,BigInt], prev: Map[Node,Node])
   	: (Graph, Map[Node, BigInt], Map[Node,Node], BigInt) = {  	  
     require(validGraph(g) && contents(queue).subsetOf(contents(g.nodes)))             
@@ -47,7 +49,7 @@ object ShortestPath {
       case Nil() =>
         (g, dist, prev, 1)
       case _ =>
-        val (minElem, nqueue) = removeMin(queue, dist) //not counting the time of this operation ??
+        val (minElem, nqueue) = removeMin(queue, dist) //O(size(queue))
         val succs = getSuccs(g, minElem) //constant time       
         val newgraph = removeSuccEdges(g, minElem) //we don't have to look at the minimum element again        
         //update the dist and prev
@@ -58,6 +60,5 @@ object ShortestPath {
   } ensuring (res => //invaraints of resg
     	validGraph(res._1) && 
     	contents(res._1.nodes) == contents(g.nodes) && // only edges are removed
-    	res._4 <= 2 * (edgeSize(g) - edgeSize(res._1)) + size(queue) + 1)  
- 
+    	res._4 <= 2*(edgeSize(g) - edgeSize(res._1)) + size(queue) + 1)   
 }
