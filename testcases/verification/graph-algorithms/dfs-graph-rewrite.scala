@@ -3,6 +3,34 @@ import Graph._
 
 object GraphDFS {
 
+  def visitNodes(g : Graph, nodes: NodeList, reach: Set[Node]) : (Graph, Set[Node], BigInt) = {
+    require(validGraph(g) && contents(nodes).subsetOf(contents(g.nodes)))
+    nodes match {
+      case Nil() =>
+        (g, reach, 1)      
+      case Cons(n, tail) =>
+        //mark that `n` is reachable        
+        //take every successor of `n`, remove edges leading to them, and recurse
+        val succs = getSuccs(g, n) //constant time               
+        val newgraph = removeSuccEdges(g, n) // constant time               
+        val (ng, reach1, t1) = visitNodes(newgraph, succs, reach ++ Set(n)) //recurse into the successors       
+        val (fg, reach2, t2) = visitNodes(ng, tail, reach1) //continue the outer iteration
+        (fg, reach2, t1 + t2 + 1)
+    }
+  } ensuring (res => validGraph(res._1) && 
+      contents(res._1.nodes) == contents(g.nodes) && // only edges are removed
+      res._3 <= 4 *(edgeSize(g) - edgeSize(res._1)) + 2*size(nodes) + 1)
+  
+  def dfsSimple(g: Graph) : (Graph, Set[Node], BigInt) = {
+    require(validGraph(g))
+    
+    visitNodes(g, g.nodes, Set[Node]())
+    
+  } ensuring (res => res._3 <= 4 *graphSize(g) + 1)
+  
+  /**
+   * DFS tail recursive
+   */
   def dfs(g: Graph, stack: NodeList): (NodeList, BigInt) = {
     require(validGraph(g) && 
         isDistinct(stack) && contents(stack).subsetOf(contents(g.nodes)))        
