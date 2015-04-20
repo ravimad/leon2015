@@ -60,5 +60,5 @@ object ShortestPath {
     	contents(res._1.nodes) == contents(g.nodes) && // only edges are removed
     	res._4 <= 2*(edgeSize(g) - edgeSize(res._1)) + size(queue) * size(queue) + size(queue) + 1)   
     	
-   //this would given a O(|E| + |V|^2) bound 
+   //this would give a O(|E| + |V|^2) bound 
 }

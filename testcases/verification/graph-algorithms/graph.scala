@@ -55,7 +55,7 @@ object Graph {
     
     g.adjlist(node)
 
-  } ensuring (res => nodeInv(g, node))
+  } ensuring (res => nodeInv(g, node))  
   
    //graph size metrics
   def size(nl: NodeList): BigInt = {
@@ -92,6 +92,30 @@ object Graph {
     
     nodeSize(g) + edgeSize(g)
   }
+  
+  def succSize(g: Graph,n: Node) : BigInt = {
+    require(validGraph(g) && contents(g.nodes).contains(n))
+    
+    size(getSuccs(g, n))
+  }   
+  
+  //graph operations
+  /**
+   * This is a constant time operation.
+   * Cycles are not allowed as of now.
+   */
+  def createEdge(g: Graph, src: Node, dst: Node) : Graph = {
+    require(validGraph(g) && contents(g.nodes).contains(src) && 
+        contents(g.nodes).contains(dst))
+    if (src != dst && !contains(g.adjlist(src), dst)) {      
+      Graph(g.nodes, g.adjlist.updated(src, Cons(dst, g.adjlist(src))))
+    } else
+      g
+    
+  } ensuring(res => validGraph(res) && 
+      edgeSize(res) <= edgeSize(g) + 1 && edgeSize(res) >= edgeSize(g) &&
+      succSize(res, src) <= succSize(g, src) + 1 && succSize(res, src) >= succSize(g, src) &&
+      (src == dst || contents(getSuccs(res, src)).contains(dst)))
 
   def contains(nl: NodeList, key: Node): Boolean = {
     nl match {
