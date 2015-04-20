@@ -97,7 +97,39 @@ object Graph {
     require(validGraph(g) && contents(g.nodes).contains(n))
     
     size(getSuccs(g, n))
-  }   
+  }
+
+  //transitive operations
+  //the following implementations are suboptimal but used only in verification.
+  /*def collectPrevs(g: Graph, nl: NodeList, x: Node): NodeList = {
+    nl match {
+      case Nil() =>
+        Nil()
+      case Cons(n, tail) =>
+        if (g.adjlist(n).contains(x))
+          Cons(n, collectPrevs(tail))
+        else
+          collectPrevs(tail)
+    }
+  }
+  
+  def prev(g: Graph, n: Node) : NodeList = {
+    collectPrevs(g.nodes, n)
+  }
+  
+  def transPrev(g: Graph, n: Node) : NodeList = {
+    transPrevList(g, prev(g, n))
+  }
+  
+  def transPrevList(g: Graph, nl: NodeList) : NodeList = {
+    nl match {
+      case Nil() =>
+        Nil()
+      case Cons(n, tail) => 
+        append(transPrev(g, n), transPrevList(g, tail))
+    }
+  } */
+  
   
   //graph operations
   /**
