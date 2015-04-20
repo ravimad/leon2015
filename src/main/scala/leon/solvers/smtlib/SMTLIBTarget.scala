@@ -1,10 +1,12 @@
+/* Copyright 2009-2015 EPFL, Lausanne */
+
 package leon
 package solvers
 package smtlib
 
 import purescala._
 import Common._
-import Expressions.{Assert => _, _}
+import Expressions._
 import Extractors._
 import ExprOps._
 import Types._
@@ -14,8 +16,14 @@ import utils.IncrementalBijection
 
 import _root_.smtlib.common._
 import _root_.smtlib.printer.{RecursivePrinter => SMTPrinter}
-import _root_.smtlib.parser.Commands.{Constructor => SMTConstructor, FunDef => _, _}
-import _root_.smtlib.parser.Terms.{Identifier => SMTIdentifier, Let => SMTLet, _}
+import _root_.smtlib.parser.Commands.{Constructor => SMTConstructor, FunDef => _, Assert => SMTAssert, _}
+import _root_.smtlib.parser.Terms.{
+  Identifier => SMTIdentifier,
+  Let => SMTLet,
+  ForAll => SMTForall,
+  Exists => SMTExists,
+  _
+}
 import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse, _}
 import _root_.smtlib.theories._
 import _root_.smtlib.{Interpreter => SMTInterpreter}
@@ -26,14 +34,17 @@ trait SMTLIBTarget {
   val reporter = context.reporter
 
   def targetName: String
-  def getNewInterpreter(): SMTInterpreter
 
-  val interpreter = getNewInterpreter()
+  def interpreterOps(ctx: LeonContext): Seq[String]
+
+  def getNewInterpreter(ctx: LeonContext): SMTInterpreter
+
+  val interpreter = getNewInterpreter(context)
 
   var out: java.io.FileWriter = _
 
   reporter.ifDebug { debug =>
-    val file = context.files.headOption.map(_.getName).getOrElse("NA")  
+    val file = context.files.headOption.map(_.getName).getOrElse("NA")
     val n    = VCNumbers.getNext(targetName+file)
 
     val dir = new java.io.File("vcs")
@@ -42,7 +53,7 @@ trait SMTLIBTarget {
       dir.mkdir
     }
 
-    out = new java.io.FileWriter(s"vcs/$targetName-$file-$n.smt2", true)
+    out = new java.io.FileWriter(s"vcs/$targetName-$file-$n.smt2", false)
   }
 
   def id2sym(id: Identifier): SSymbol = SSymbol(id.name+"!"+id.globalId)
@@ -52,7 +63,6 @@ trait SMTLIBTarget {
   val selectors    = new IncrementalBijection[(TypeTree, Int), SSymbol]()
   val testers      = new IncrementalBijection[TypeTree, SSymbol]()
   val variables    = new IncrementalBijection[Identifier, SSymbol]()
-  val classes      = new IncrementalBijection[CaseClassDef, SSymbol]()
   val sorts        = new IncrementalBijection[TypeTree, Sort]()
   val functions    = new IncrementalBijection[TypedFunDef, SSymbol]()
 
@@ -109,6 +119,28 @@ trait SMTLIBTarget {
     case _ =>   t
   }
 
+  protected def quantifiedTerm(
+    quantifier: (SortedVar, Seq[SortedVar], Term) => Term,
+    vars: Seq[Identifier],
+    body: Expr
+  ) : Term = {
+    if (vars.isEmpty) toSMT(body)(Map())
+    else {
+      val sortedVars = vars map { id =>
+        SortedVar(id2sym(id), declareSort(id.getType))
+      }
+      quantifier(
+        sortedVars.head,
+        sortedVars.tail,
+        toSMT(body)(vars.map{ id => id -> (id2sym(id): Term)}.toMap)
+      )
+    }
+  }
+
+  // Returns a quantified term where all free variables in the body have been quantified
+  protected def quantifiedTerm(quantifier: (SortedVar, Seq[SortedVar], Term) => Term, body: Expr): Term =
+    quantifiedTerm(quantifier, variablesOf(body).toSeq, body)
+
   // Corresponds to a smt map, not a leon/scala array
   // Should NEVER escape past SMT-world
   private[smtlib] case class RawArrayType(from: TypeTree, to: TypeTree) extends TypeTree
@@ -135,8 +167,9 @@ trait SMTLIBTarget {
       // We expect a RawArrayValue with keys in from and values in Option[to],
       // with default value == None
       require(from == r.keyTpe && r.default == OptionManager.mkLeonNone(to))
-      val elems = r.elems.mapValues {
-        case CaseClass(leonSome, Seq(x)) => x
+      val elems = r.elems.flatMap {
+        case (k, CaseClass(leonSome, Seq(x))) => Some(k -> x)
+        case (k, _) => None
       }.toSeq
       finiteMap(elems, from, to)
 
@@ -491,6 +524,7 @@ trait SMTLIBTarget {
 
       case e @ BinaryOperator(a, b, _) =>
         e match {
+          case (_: Assert) => toSMT(IfExpr(a, b, Error(b.getType, "assertion failed")))
           case (_: Equals) => Core.Equals(toSMT(a), toSMT(b))
           case (_: Implies) => Core.Implies(toSMT(a), toSMT(b))
           case (_: Plus) => Ints.Add(toSMT(a), toSMT(b))
@@ -646,7 +680,6 @@ trait SMTLIBTarget {
       out.write("\n")
       out.flush()
     }
-
     interpreter.eval(cmd) match {
       case err@ErrorResponse(msg) if !interrupted =>
         reporter.fatalError("Unexpected error from smt-"+targetName+" solver: "+msg)
@@ -657,14 +690,14 @@ trait SMTLIBTarget {
   override def assertCnstr(expr: Expr): Unit = {
     variablesOf(expr).foreach(declareVariable)
     val term = toSMT(expr)(Map())
-    sendCommand(Assert(term))
+    sendCommand(SMTAssert(term))
   }
 
   override def check: Option[Boolean] = sendCommand(CheckSat()) match {
     case CheckSatStatus(SatStatus)     => Some(true)
     case CheckSatStatus(UnsatStatus)   => Some(false)
     case CheckSatStatus(UnknownStatus) => None
-    case _                               => None
+    case e                             => None
   }
 
   override def getModel: Map[Identifier, Expr] = {

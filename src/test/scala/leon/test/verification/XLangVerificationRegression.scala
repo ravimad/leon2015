@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon.test.verification
 
@@ -64,7 +64,7 @@ class XLangVerificationRegression extends LeonTestSuite {
       _.endsWith(".scala"))
 
     val isZ3Available = try {
-      new Z3Interpreter()
+      Z3Interpreter.buildDefault
       true
     } catch {
       case e: java.io.IOException =>
@@ -72,7 +72,7 @@ class XLangVerificationRegression extends LeonTestSuite {
     }
 
     val isCVC4Available = try {
-      new CVC4Interpreter()
+      CVC4Interpreter.buildDefault
       // @EK: CVC4 works on most testcases already, but not all and thus cannot be used in regression.
       true
     } catch {

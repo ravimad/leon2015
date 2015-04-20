@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 
@@ -45,6 +45,8 @@ sealed abstract class LeonOptionDef {
   val name: String
   val usageOption: String
   val usageDesc: String
+
+  def usageDescs = usageDesc.split("\n").toList
 }
 
 case class LeonFlagOptionDef(name: String,

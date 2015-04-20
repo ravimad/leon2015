@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package synthesis
@@ -52,11 +52,11 @@ object Rules {
     //IntegerEquation,
     //IntegerInequalities,
     IntInduction,
-    InnerCaseSplit,
+    InnerCaseSplit
     //new OptimisticInjection(_),
     //new SelectiveInlining(_),
     //ADTLongInduction,
-    ADTInduction
+    //ADTInduction
     //AngelicHoles // @EK: Disabled now as it is explicit with withOracle { .. }
   )
 

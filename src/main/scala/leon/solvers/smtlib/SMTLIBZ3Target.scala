@@ -1,4 +1,4 @@
-/* Copyright 2009-2013 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package solvers
@@ -23,7 +23,14 @@ trait SMTLIBZ3Target extends SMTLIBTarget {
 
   def targetName = "z3"
 
-  def getNewInterpreter() = new Z3Interpreter
+  def interpreterOps(ctx: LeonContext) = {
+    Seq(
+      "-in",
+      "-smt2"
+    )
+  }
+
+  def getNewInterpreter(ctx: LeonContext) = new Z3Interpreter("z3", interpreterOps(ctx).toArray)
 
   val extSym = SSymbol("_")
 

@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package codegen
@@ -24,7 +24,7 @@ import java.lang.reflect.Constructor
 
 class CompilationUnit(val ctx: LeonContext,
                       val program: Program,
-                      val params: CodeGenParams = CodeGenParams()) extends CodeGeneration {
+                      val params: CodeGenParams = CodeGenParams.default) extends CodeGeneration {
 
   val loader = new CafebabeClassLoader(classOf[CompilationUnit].getClassLoader)
 

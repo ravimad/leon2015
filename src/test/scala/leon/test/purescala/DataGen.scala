@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon.test.purescala
 
@@ -30,7 +30,8 @@ class DataGen extends LeonTestSuite {
   }
 
   test("Lists") {
-    val p = """|object Program {
+    val p = """|import leon.lang._
+               |object Program {
                |  sealed abstract class List
                |  case class Cons(head : Int, tail : List) extends List
                |  case object Nil extends List
@@ -59,7 +60,7 @@ class DataGen extends LeonTestSuite {
     val prog = parseString(p)
 
     val eval      = new DefaultEvaluator(testContext, prog)
-    val generator = new NaiveDataGen(testContext, prog, eval)
+    val generator = new GrammarDataGen(eval)
 
     generator.generate(BooleanType).toSet.size === 2
     generator.generate(TupleType(Seq(BooleanType,BooleanType))).toSet.size === 4

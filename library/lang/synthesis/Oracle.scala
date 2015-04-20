@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon.lang.synthesis
 
@@ -8,6 +8,7 @@ import leon.lang._
 import scala.annotation._
 
 @implicitNotFound("No Oracle available for this source of non-determinism, please provide an implicit arg <: Oracle[T]")
+@ignore
 @library
 abstract class Oracle[T] {
   def head: T = this match {
@@ -26,5 +27,7 @@ abstract class Oracle[T] {
   }
 }
 
+@ignore
 case class Node[T](l: Oracle[T], v: T, r: Oracle[T]) extends Oracle[T];
+@ignore
 case class Leaf[T](v: T) extends Oracle[T];

@@ -1,7 +1,10 @@
+/* Copyright 2009-2015 EPFL, Lausanne */
+
 package leon.purescala
 
 import Definitions._
 import Expressions._
+import ExprOps.{preMap, postMap, functionCallsOf}
 
 object DefOps {
 
@@ -262,11 +265,7 @@ object DefOps {
     
   }
   
-  
-  
-  import Expressions.Expr
-  import ExprOps.{preMap, postMap}
-  
+
   /*
    * Apply an expression operation on all expressions contained in a FunDef
    */
@@ -383,6 +382,23 @@ object DefOps {
         }
       case _ => None
     }(e)
+  }
+
+  /**
+   * Returns a call graph starting from the given sources, taking into account
+   * instantiations of function type parameters,
+   * If given limit of explored nodes reached, it returns a partial set of reached TypedFunDefs
+   * and the boolean set to "false".
+   * Otherwise, it returns the full set of reachable TypedFunDefs and "true"
+   */
+
+  def typedTransitiveCallees(sources: Set[TypedFunDef], limit: Option[Int] = None): (Set[TypedFunDef], Boolean) = {
+    import leon.utils.SearchSpace.reachable
+    reachable(
+      sources,
+      (tfd: TypedFunDef) => functionCallsOf(tfd.fullBody) map { _.tfd },
+      limit
+    )
   }
 
 }

@@ -36,3 +36,5 @@ testingSheet.sc
 #z3
 .z3-trace
 /bin
+travis/builds
+

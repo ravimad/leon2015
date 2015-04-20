@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package frontends.scalac
@@ -184,7 +184,7 @@ trait CodeExtraction extends ASTExtractors {
     }
 
     def isIgnored(s: Symbol) = {
-      (annotationsOf(s) contains "ignore") || s.isImplicit || s.fullName.toString.endsWith(".main")
+      (annotationsOf(s) contains "ignore") || s.fullName.toString.endsWith(".main")
     }
 
     def isExtern(s: Symbol) = {
@@ -867,8 +867,9 @@ trait CodeExtraction extends ASTExtractors {
         case ExFieldDef(_,_,_) =>
         case ExLazyFieldDef() => 
         case ExFieldAccessorFunction() => 
-        case d if isIgnored(d.symbol) =>
+        case d if isIgnored(d.symbol) || (d.symbol.isImplicit && d.symbol.isSynthetic) =>
         case tree =>
+          println(tree)
           outOfSubsetError(tree, "Don't know what to do with this. Not purescala?");
       }
 
@@ -1410,8 +1411,22 @@ trait CodeExtraction extends ASTExtractors {
         case ExCaseClassConstruction(tpt, args) =>
           extractType(tpt) match {
             case cct: CaseClassType =>
-              val nargs = args.map(extractTree)
-              CaseClass(cct, nargs)
+              CaseClass(cct, args.map(extractTree))
+
+            case SetType(a) =>
+              finiteSet(args.map(extractTree).toSet, a)
+
+            case MapType(a, b) =>
+              val singletons: Seq[(LeonExpr, LeonExpr)] = args.collect {
+                case ExTuple(tpes, trees) if trees.size == 2 =>
+                  (extractTree(trees(0)), extractTree(trees(1)))
+              }
+
+              if (singletons.size != args.size) {
+                outOfSubsetError(tr, "Some map elements could not be extracted as Tuple2")
+              }
+
+              finiteMap(singletons, a, b)
 
             case _ =>
               outOfSubsetError(tr, "Construction of a non-case class.")
@@ -1460,13 +1475,6 @@ trait CodeExtraction extends ASTExtractors {
               outOfSubsetError(tr, "Invalid comparison: (_: "+rt+") == (_: "+lt+")")
           }
 
-        case ExFiniteSet(tt, args)  =>
-          val underlying = extractType(tt)
-          finiteSet(args.map(extractTree).toSet, underlying)
-        case ExEmptySet(tt) =>
-          val underlying = extractType(tt)
-          EmptySet(underlying)
-
         case ExFiniteMultiset(tt, args) =>
           val underlying = extractType(tt)
           finiteMultiset(args.map(extractTree),underlying)
@@ -1474,26 +1482,6 @@ trait CodeExtraction extends ASTExtractors {
         case ExEmptyMultiset(tt) =>
           val underlying = extractType(tt)
           EmptyMultiset(underlying)
-
-        case ExEmptyMap(ft, tt) =>
-          val fromUnderlying = extractType(ft)
-          val toUnderlying   = extractType(tt)
-          EmptyMap(fromUnderlying, toUnderlying)
-
-        case ExLiteralMap(ft, tt, elems) =>
-          val fromUnderlying = extractType(ft)
-          val toUnderlying   = extractType(tt)
-
-          val singletons: Seq[(LeonExpr, LeonExpr)] = elems.collect {
-            case ExTuple(tpes, trees) if trees.size == 2 =>
-              (extractTree(trees(0)), extractTree(trees(1)))
-          }
-
-          if (singletons.size != elems.size) {
-            outOfSubsetError(tr, "Some map elements could not be extracted as Tuple2")
-          }
-
-          finiteMap(singletons, fromUnderlying, toUnderlying)
 
         case ExArrayFill(baseType, length, defaultValue) =>
           val lengthRec = extractTree(length)
@@ -1689,11 +1677,11 @@ trait CodeExtraction extends ASTExtractors {
               or(a1, a2)
 
             // Set methods
-            case (IsTyped(a1, SetType(b1)), "min", Nil) =>
-              SetMin(a1)
+            //case (IsTyped(a1, SetType(b1)), "min", Nil) =>
+            //  SetMin(a1)
 
-            case (IsTyped(a1, SetType(b1)), "max", Nil) =>
-              SetMax(a1)
+            //case (IsTyped(a1, SetType(b1)), "max", Nil) =>
+            //  SetMax(a1)
 
             case (IsTyped(a1, SetType(b1)), "++", List(IsTyped(a2, SetType(b2))))  if b1 == b2 =>
               SetUnion(a1, a2)
@@ -1709,6 +1697,9 @@ trait CodeExtraction extends ASTExtractors {
 
             case (IsTyped(a1, SetType(b1)), "contains", List(a2)) =>
               ElementOfSet(a2, a1)
+
+            case (IsTyped(a1, SetType(b1)), "isEmpty", List()) =>
+              Equals(a1, finiteSet(Set(), b1))
 
             // Multiset methods
             case (IsTyped(a1, MultisetType(b1)), "++", List(IsTyped(a2, MultisetType(b2))))  if b1 == b2 =>
@@ -1759,8 +1750,7 @@ trait CodeExtraction extends ASTExtractors {
 
         // default behaviour is to complain :)
         case _ =>
-          println(tr.getClass)
-          outOfSubsetError(tr, "Could not extract as PureScala")
+          outOfSubsetError(tr, "Could not extract as PureScala (Scala tree of type "+tr.getClass+")")
       }
 
       res.setPos(current.pos)
@@ -1796,13 +1786,19 @@ trait CodeExtraction extends ASTExtractors {
       case TypeRef(_, sym, _) if isBigIntSym(sym) =>
         IntegerType
 
-      case TypeRef(_, sym, btt :: Nil) if isSetTraitSym(sym) =>
+      case TypeRef(_, sym, btt :: Nil) if isScalaSetSym(sym) =>
+        outOfSubsetError(pos, "Scala's Set API is no longer extracted. Make sure you import leon.lang.Set that defines supported Set operations.")
+
+      case TypeRef(_, sym, List(a,b)) if isScalaMapSym(sym) =>
+        outOfSubsetError(pos, "Scala's Map API is no longer extracted. Make sure you import leon.lang.Map that defines supported Map operations.")
+
+      case TypeRef(_, sym, btt :: Nil) if isSetSym(sym) =>
         SetType(extractType(btt))
 
       case TypeRef(_, sym, btt :: Nil) if isMultisetTraitSym(sym) =>
         MultisetType(extractType(btt))
 
-      case TypeRef(_, sym, List(ftt,ttt)) if isMapTraitSym(sym) =>
+      case TypeRef(_, sym, List(ftt,ttt)) if isMapSym(sym) =>
         MapType(extractType(ftt), extractType(ttt))
 
       case TypeRef(_, sym, List(t1,t2)) if isTuple2(sym) =>

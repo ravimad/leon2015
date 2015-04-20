@@ -1,4 +1,4 @@
-/* Copyright 2009-2013 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package solvers
@@ -21,7 +21,29 @@ trait SMTLIBCVC4Target extends SMTLIBTarget {
 
   def targetName = "cvc4"
 
-  def getNewInterpreter() = new CVC4Interpreter
+  def userDefinedOps(ctx: LeonContext) = {
+    ctx.options.collect {
+      case LeonValueOption("solver:cvc4", value) => value
+    }
+  }
+
+  def interpreterOps(ctx: LeonContext) = {
+    Seq(
+      "-q",
+      "--produce-models",
+      "--no-incremental",
+      "--tear-down-incremental",
+      "--dt-rewrite-error-sel",
+      "--print-success",
+      "--lang", "smt"
+    ) ++ userDefinedOps(ctx)
+  }
+
+  def getNewInterpreter(ctx: LeonContext) = {
+    val opts = interpreterOps(ctx)
+    reporter.debug("Invoking solver with "+opts.mkString(" "))
+    new CVC4Interpreter("cvc4", opts.toArray)
+  }
 
   override def declareSort(t: TypeTree): Sort = {
     val tpe = normalizeType(t)
@@ -159,4 +181,14 @@ trait SMTLIBCVC4Target extends SMTLIBTarget {
     case _ =>
       super[SMTLIBTarget].toSMT(e)
   }
+}
+
+object SMTLIBCVC4Component extends LeonComponent {
+  val name = "cvc4 solver"
+
+  val description = "Solver invoked when --solvers=smt-cvc4"
+
+  override val definedOptions : Set[LeonOptionDef] = Set(
+    LeonValueOptionDef("solver:cvc4", "--solver:cvc4=<cvc4-opt>", "Pass extra arguments to CVC4")
+  )
 }

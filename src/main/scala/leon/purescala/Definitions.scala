@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package purescala
@@ -437,6 +437,8 @@ object Definitions {
       TypedFunDef(this, tparams.map(_.tp))
     }
 
+    def isRecursive(p: Program) = p.callGraph.transitiveCallees(this) contains this
+
     setSubDefOwners()
     // Deprecated, old API
     @deprecated("Use .body instead", "2.3")
@@ -495,6 +497,15 @@ object Definitions {
 
     private var trCache = Map[Expr, Expr]()
     private var postCache = Map[Expr, Expr]()
+
+    def fullBody = {
+      val fb = fd.fullBody
+      trCache.getOrElse(fb, {
+        val res = translated(fb)
+        trCache += fb -> res
+        res
+      })
+    }
 
     def body = fd.body.map { b =>
       trCache.getOrElse(b, {

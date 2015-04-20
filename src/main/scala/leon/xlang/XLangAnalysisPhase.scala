@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package xlang
@@ -11,15 +11,17 @@ object XLangAnalysisPhase extends LeonPhase[Program, VerificationReport] {
   val name = "xlang analysis"
   val description = "apply analysis on xlang"
 
-  case object VCInvariantPost extends VCKind("invariant postcondition", "inv. post.")
-  case object VCInvariantInd  extends VCKind("invariant inductive",     "inv. ind.")
+  object VCXLangKinds {
+    case object InvariantPost extends VCKind("invariant postcondition", "inv. post.")
+    case object InvariantInd  extends VCKind("invariant inductive",     "inv. ind.")
+  }
 
   def run(ctx: LeonContext)(pgm: Program): VerificationReport = {
 
-    val pgm1 = ArrayTransformation(ctx, pgm)
-    val pgm2 = EpsilonElimination(ctx, pgm1)
-    val (pgm3, wasLoop) = ImperativeCodeElimination.run(ctx)(pgm2)
-    val pgm4 = purescala.FunctionClosure.run(ctx)(pgm3)
+    ArrayTransformation(ctx, pgm) // In-place
+    EpsilonElimination(ctx, pgm)  // In-place
+    val (pgm1, wasLoop) = ImperativeCodeElimination.run(ctx)(pgm)
+    val pgm2 = purescala.FunctionClosure.run(ctx)(pgm1)
 
     def functionWasLoop(fd: FunDef): Boolean = fd.orig match {
       case Some(nested) => // could have been a LetDef originally
@@ -28,7 +30,7 @@ object XLangAnalysisPhase extends LeonPhase[Program, VerificationReport] {
     }
 
     var subFunctionsOf = Map[FunDef, Set[FunDef]]().withDefaultValue(Set())
-    pgm4.definedFunctions.foreach { fd => fd.owner match {
+    pgm2.definedFunctions.foreach { fd => fd.owner match {
       case Some(p : FunDef) =>
         subFunctionsOf += p -> (subFunctionsOf(p) + fd)
       case _ =>
@@ -54,39 +56,39 @@ object XLangAnalysisPhase extends LeonPhase[Program, VerificationReport] {
       case opt => opt
     }
 
-    val vr = AnalysisPhase.run(ctx.copy(options = newOptions))(pgm4)
+    val vr = AnalysisPhase.run(ctx.copy(options = newOptions))(pgm2)
     completeVerificationReport(vr, functionWasLoop)
   }
 
   def completeVerificationReport(vr: VerificationReport, functionWasLoop: FunDef => Boolean): VerificationReport = {
-    val vcs = vr.conditions
 
     //this is enough to convert invariant postcondition and inductive conditions. However the initial validity
     //of the invariant (before entering the loop) will still appear as a regular function precondition
     //To fix this, we need some information in the VCs about which function the precondtion refers to
     //although we could arguably say that the term precondition is general enough to refer both to a loop invariant
     //precondition and a function invocation precondition
-    var freshFtoVcs = Map[FunDef, List[VerificationCondition]]()
 
-    for (vc <- vcs) {
-      val funDef = vc.funDef
-      if(functionWasLoop(funDef)) {
-        val freshVc = new VerificationCondition(
-          vc.condition, 
-          funDef.owner match { case Some(fd : FunDef) => fd; case _ => funDef }, 
-          if(vc.kind == VCPostcondition) VCInvariantPost else if(vc.kind == VCPrecondition) VCInvariantInd else vc.kind,
-          vc.tactic,
-          vc.info).setPos(funDef)
-        freshVc.value = vc.value
-        freshVc.solvedWith = vc.solvedWith
-        freshVc.time = vc.time
-        freshFtoVcs += freshVc.funDef -> (freshVc :: freshFtoVcs.getOrElse(freshVc.funDef, List()))
+    val newResults = for ((vc, ovr) <- vr.results) yield {
+      if(functionWasLoop(vc.fd)) {
+        val nvc = VC(vc.condition, 
+                     vc.fd.owner match {
+                       case Some(fd: FunDef) => fd
+                       case _ => vc.fd
+                     },
+                     vc.kind.underlying match {
+                       case VCKinds.Postcondition => VCXLangKinds.InvariantPost
+                       case VCKinds.Precondition => VCXLangKinds.InvariantInd
+                       case _ => vc.kind
+                     },
+                     vc.tactic)
+
+        nvc -> ovr
       } else {
-        freshFtoVcs += vc.funDef -> (vc :: freshFtoVcs.getOrElse(vc.funDef, List()))
+        vc -> ovr
       }
     }
 
-    new VerificationReport(freshFtoVcs)
+    VerificationReport(newResults)
   }
 
 }

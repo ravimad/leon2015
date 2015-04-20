@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package synthesis
@@ -38,7 +38,7 @@ abstract class TEGISLike[T <% Typed](name: String) extends Rule(name) {
         var tests = ef.extractTests(p).map(_.ins).distinct
         if (tests.nonEmpty) {
 
-          val evalParams            = CodeGenParams(maxFunctionInvocations = 2000, checkContracts = true)
+          val evalParams            = CodeGenParams.default.copy(maxFunctionInvocations = 2000)
           val evaluator             = new DualEvaluator(sctx.context, sctx.program, evalParams)
 
           val enum = new MemoizedEnumerator[T, Expr](grammar.getProductions)

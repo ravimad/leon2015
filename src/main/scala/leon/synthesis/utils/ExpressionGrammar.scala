@@ -1,3 +1,5 @@
+/* Copyright 2009-2015 EPFL, Lausanne */
+
 package leon
 package synthesis
 package utils
@@ -11,11 +13,10 @@ import purescala.Common._
 import purescala.Definitions._
 import purescala.Types._
 import purescala.ExprOps._
-import purescala.DefOps._
 import purescala.TypeOps._
 import purescala.Extractors._
+import purescala.Constructors._
 import purescala.ScalaPrinter
-import purescala.Constructors.finiteSet
 
 import scala.language.implicitConversions
 
@@ -37,16 +38,15 @@ abstract class ExpressionGrammar[T <% Typed] {
   def computeProductions(t: T): Seq[Gen]
 
   def filter(f: Gen => Boolean) = {
-    val that = this
     new ExpressionGrammar[T] {
-      def computeProductions(t: T) = that.computeProductions(t).filter(f)
+      def computeProductions(t: T) = ExpressionGrammar.this.computeProductions(t).filter(f)
     }
   }
 
   final def ||(that: ExpressionGrammar[T]): ExpressionGrammar[T] = {
     ExpressionGrammars.Or(Seq(this, that))
   }
-
+ 
 
   final def printProductions(printer: String => Unit) {
     for ((t, gs) <- cache; g <- gs) {
@@ -80,33 +80,33 @@ object ExpressionGrammars {
         List(
           Generator(Nil, { _ => BooleanLiteral(true) }),
           Generator(Nil, { _ => BooleanLiteral(false) }),
-          Generator(List(BooleanType), { case Seq(a) => Not(a) }),
-          Generator(List(BooleanType, BooleanType), { case Seq(a, b) => And(a, b) }),
-          Generator(List(BooleanType, BooleanType), { case Seq(a, b) => LeonOr(a, b) }),
+          Generator(List(BooleanType),              { case Seq(a)    => not(a) }),
+          Generator(List(BooleanType, BooleanType), { case Seq(a, b) => and(a, b) }),
+          Generator(List(BooleanType, BooleanType), { case Seq(a, b) => or(a, b) }),
           Generator(List(Int32Type, Int32Type),     { case Seq(a, b) => LessThan(a, b) }),
           Generator(List(Int32Type, Int32Type),     { case Seq(a, b) => LessEquals(a, b) }),
-          Generator(List(Int32Type,   Int32Type  ), { case Seq(a, b) => Equals(a, b) }),
+          Generator(List(Int32Type,   Int32Type  ), { case Seq(a, b) => equality(a, b) }),
           Generator(List(IntegerType, IntegerType), { case Seq(a, b) => LessThan(a, b) }),
           Generator(List(IntegerType, IntegerType), { case Seq(a, b) => LessEquals(a, b) }),
-          Generator(List(IntegerType, IntegerType), { case Seq(a, b) => Equals(a, b) }),
-          Generator(List(BooleanType, BooleanType), { case Seq(a, b) => Equals(a, b) })
+          Generator(List(IntegerType, IntegerType), { case Seq(a, b) => equality(a, b) }),
+          Generator(List(BooleanType, BooleanType), { case Seq(a, b) => equality(a, b) })
         )
       case Int32Type =>
         List(
           Generator(Nil, { _ => IntLiteral(0) }),
           Generator(Nil, { _ => IntLiteral(1) }),
-          Generator(List(Int32Type, Int32Type), { case Seq(a,b) => BVPlus(a, b) }),
-          Generator(List(Int32Type, Int32Type), { case Seq(a,b) => BVMinus(a, b) }),
-          Generator(List(Int32Type, Int32Type), { case Seq(a,b) => BVTimes(a, b) })
+          Generator(List(Int32Type, Int32Type), { case Seq(a,b) => plus(a, b) }),
+          Generator(List(Int32Type, Int32Type), { case Seq(a,b) => minus(a, b) }),
+          Generator(List(Int32Type, Int32Type), { case Seq(a,b) => times(a, b) })
         )
 
       case IntegerType =>
         List(
           Generator(Nil, { _ => InfiniteIntegerLiteral(0) }),
           Generator(Nil, { _ => InfiniteIntegerLiteral(1) }),
-          Generator(List(IntegerType, IntegerType), { case Seq(a,b) => Plus(a, b) }),
-          Generator(List(IntegerType, IntegerType), { case Seq(a,b) => Minus(a, b) }),
-          Generator(List(IntegerType, IntegerType), { case Seq(a,b) => Times(a, b) })
+          Generator(List(IntegerType, IntegerType), { case Seq(a,b) => plus(a, b) }),
+          Generator(List(IntegerType, IntegerType), { case Seq(a,b) => minus(a, b) }),
+          Generator(List(IntegerType, IntegerType), { case Seq(a,b) => times(a, b) })
         )
 
       case TupleType(stps) =>
@@ -149,13 +149,13 @@ object ExpressionGrammars {
         List(
           Generator(Nil, { _ => IntLiteral(0) }),
           Generator(Nil, { _ => IntLiteral(1) }),
-          Generator(Nil, { _ => IntLiteral(-1) })
+          Generator(Nil, { _ => IntLiteral(42) })
         )
       case IntegerType =>
         List(
           Generator(Nil, { _ => InfiniteIntegerLiteral(0) }),
           Generator(Nil, { _ => InfiniteIntegerLiteral(1) }),
-          Generator(Nil, { _ => InfiniteIntegerLiteral(-1) })
+          Generator(Nil, { _ => InfiniteIntegerLiteral(42) })
         )
 
       case tp@TypeParameter(_) =>
@@ -218,11 +218,12 @@ object ExpressionGrammars {
     
     type L = Label[String]
 
-    private var counter = -1
-
-    def getNext(): Int = {
-      counter += 1
-      counter
+    val getNext: () => Int = {
+      var counter = -1
+      () => {
+        counter += 1
+        counter
+      }
     }
 
     lazy val allSimilar = computeSimilar(e).groupBy(_._1).mapValues(_.map(_._2))
@@ -238,7 +239,7 @@ object ExpressionGrammars {
 
       def getLabel(t: TypeTree) = {
         val tpe = bestRealType(t)
-        val c = getNext
+        val c = getNext()
         Label(tpe, "G"+c)
       }
 

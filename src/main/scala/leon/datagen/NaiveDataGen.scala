@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package datagen
@@ -16,6 +16,7 @@ import scala.collection.mutable.{Map=>MutableMap}
 /** Utility functions to generate values of a given type.
   * In fact, it could be used to generate *terms* of a given type,
   * e.g. by passing trees representing variables for the "bounds". */
+@deprecated("Stream-based datagen is deprecated, use GrammarDataGen with ValueGrammar instead", "3.0")
 class NaiveDataGen(ctx: LeonContext, p: Program, evaluator: Evaluator, _bounds : Option[Map[TypeTree,Seq[Expr]]] = None) extends DataGenerator {
 
   val bounds = _bounds.getOrElse(Map())
@@ -42,7 +43,7 @@ class NaiveDataGen(ctx: LeonContext, p: Program, evaluator: Evaluator, _bounds :
         BooleanLiteral(true) #:: BooleanLiteral(false) #:: Stream.empty
 
       case Int32Type =>
-        IntLiteral(0) #:: IntLiteral(1) #:: IntLiteral(-1) #:: Stream.empty
+        IntLiteral(0) #:: IntLiteral(1) #:: IntLiteral(2) #:: IntLiteral(-1) #:: Stream.empty
 
       case tp: TypeParameter =>
         tpStream(tp)

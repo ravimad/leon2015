@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package purescala
@@ -669,21 +669,6 @@ object ExprOps {
     rec(expr, Map.empty)
   }
 
-  /** Rewrites all pattern-matching expressions into if-then-else expressions,
-   * with additional error conditions. Does not introduce additional variables.
-   */
-  val cacheMtITE = new TrieMap[Expr, Expr]()
-
-  def matchToIfThenElse(expr: Expr) : Expr = {
-    cacheMtITE.get(expr) match {
-      case Some(res) =>
-        res
-      case None =>
-        val r = convertMatchToIfThenElse(expr)
-        cacheMtITE += expr -> r
-        r
-    }
-  }
 
   /**
    * Generates substitutions necessary to transform scrutinee to equivalent
@@ -835,8 +820,11 @@ object ExprOps {
     case LiteralPattern(None, lit) => Map()
     case LiteralPattern(Some(id), lit) => Map(id -> in)
   }
-  
-  private def convertMatchToIfThenElse(expr: Expr): Expr = {
+
+  /** Rewrites all pattern-matching expressions into if-then-else expressions,
+   * with additional error conditions. Does not introduce additional variables.
+   */
+  def matchToIfThenElse(expr: Expr): Expr = {
 
     def rewritePM(e: Expr): Option[Expr] = e match {
       case m @ MatchExpr(scrut, cases) =>
@@ -966,26 +954,15 @@ object ExprOps {
   /**
    * Rewrites all map accesses with additional error conditions.
    */
-  val cacheMGWC = new TrieMap[Expr, Expr]()
+  def mapGetWithChecks(expr: Expr): Expr = {
+    postMap({
+      case mg @ MapGet(m,k) =>
+        val ida = MapIsDefinedAt(m, k)
+        Some(IfExpr(ida, mg, Error(mg.getType, "Key not found for map access").copiedFrom(mg)).copiedFrom(mg))
 
-  def mapGetWithChecks(expr: Expr) : Expr = {
-    cacheMGWC.get(expr) match {
-      case Some(res) =>
-        res
-      case None =>
-
-        val r = postMap({
-          case mg @ MapGet(m,k) =>
-            val ida = MapIsDefinedAt(m, k)
-            Some(IfExpr(ida, mg, Error(mg.getType, "Key not found for map access").copiedFrom(mg)).copiedFrom(mg))
-
-          case _=>
-            None
-        })(expr)
-
-        cacheMGWC += expr -> r
-        r
-    }
+      case _=>
+        None
+    })(expr)
   }
 
   /**
@@ -1286,6 +1263,8 @@ object ExprOps {
     preTraversal{
       case Choose(_, None) => return false
       case Hole(_, _) => return false
+      //@EK FIXME: do we need it? 
+      //case Error(_, _) => return false
       case Gives(_,_) => return false
       case _ =>
     }(e)
@@ -1975,6 +1954,7 @@ object ExprOps {
       } 
     case _ => None
   }
+
 
   /**
    * Deprecated API

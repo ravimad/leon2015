@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon.test.codegen
 
@@ -127,7 +127,8 @@ class CodeGenTests extends test.LeonTestSuite {
 
 
   val code = """
-    
+    import leon.lang._
+
     object simple {
       abstract class Abs
       case class Conc(x : Int) extends Abs

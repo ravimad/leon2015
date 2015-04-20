@@ -1,4 +1,4 @@
-/* Copyright 2009-2014 EPFL, Lausanne */
+/* Copyright 2009-2015 EPFL, Lausanne */
 
 package leon
 package solvers
@@ -8,6 +8,8 @@ import purescala.Common._
 import purescala.Expressions._
 import purescala.ExprOps._
 import purescala.Types._
+
+import Instantiation._
 
 class LambdaManager[T](encoder: TemplateEncoder[T]) {
   private type IdMap = Map[T, LambdaTemplate[T]]
@@ -56,10 +58,10 @@ class LambdaManager[T](encoder: TemplateEncoder[T]) {
     lambdas.foreach(p => freeLambdas += p._1 -> (freeLambdas(p._1) + p._2))
   }
 
-  def instantiate(apps: Map[T, Set[App[T]]], lambdas: Map[T, LambdaTemplate[T]]) : (Seq[T], Map[T, Set[TemplateCallInfo[T]]], Map[(T, App[T]), Set[TemplateAppInfo[T]]]) = {
-    var clauses : Seq[T] = Seq.empty
-    var callBlockers : Map[T, Set[TemplateCallInfo[T]]] = Map.empty.withDefaultValue(Set.empty)
-    var appBlockers  : Map[(T, App[T]), Set[TemplateAppInfo[T]]] = Map.empty.withDefaultValue(Set.empty)
+  private def instantiate(apps: Map[T, Set[App[T]]], lambdas: Map[T, LambdaTemplate[T]]) : Instantiation[T] = {
+    var clauses : Clauses[T] = Seq.empty
+    var callBlockers : CallBlockers[T] = Map.empty.withDefaultValue(Set.empty)
+    var appBlockers  : AppBlockers[T] = Map.empty.withDefaultValue(Set.empty)
 
     def mkBlocker(blockedApp: (T, App[T]), lambda: (T, LambdaTemplate[T])) : Unit = {
       val (_, App(caller, tpe, args)) = blockedApp
@@ -88,7 +90,7 @@ class LambdaManager[T](encoder: TemplateEncoder[T]) {
         clauses ++= newClauses
         newCalls.foreach(p => callBlockers += p._1 -> (callBlockers(p._1) ++ p._2))
         newApps.foreach(p => appBlockers += p._1 -> (appBlockers(p._1) ++ p._2))
-      } else {
+      } else if (!freeLambdas(tpe).contains(caller)) {
         val key = b -> app
 
         // make sure that even if byType(tpe) is empty, app is recorded in blockers
@@ -106,7 +108,15 @@ class LambdaManager[T](encoder: TemplateEncoder[T]) {
     (clauses, callBlockers, appBlockers)
   }
 
-  def equalityClauses(idT: T, template: LambdaTemplate[T]): Seq[T] = {
+  def instantiateLambda(idT: T, template: LambdaTemplate[T]): Instantiation[T] = {
+    val eqClauses = equalityClauses(idT, template)
+    val (clauses, blockers, apps) = instantiate(Map.empty, Map(idT -> template))
+    (eqClauses ++ clauses, blockers, apps)
+  }
+
+  def instantiateApps(apps: Map[T, Set[App[T]]]): Instantiation[T] = instantiate(apps, Map.empty)
+
+  private def equalityClauses(idT: T, template: LambdaTemplate[T]): Seq[T] = {
     byType(template.tpe).map { case (thatIdT, that) =>
       val equals = encoder.mkEquals(idT, thatIdT)
       template.contextEquality(that) match {
