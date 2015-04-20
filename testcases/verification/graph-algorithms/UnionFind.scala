@@ -11,12 +11,21 @@ object DisjointSet {
    * Number of nodes that have a path to 'x'
    */
   def setSize(x: Node, g: Graph) : BigInt = {
-    1 + size(transPrev(g, x))
+    1 + size(reachTo(g, x)) //every that can reach 'x'
   } ensuring(_ >= 1)  
   
   //Rank invariant
+  def twopower(x: BigInt) : BigInt = {
+    if(x < 0)
+       0
+      else if(x == 0)
+        1
+        else 
+          2 * twopower(x - 1)
+  }
+  
   def validRank(x: Node, g: Graph, rank: Map[Node, BigInt]) : Boolean = {
-    rank(x) == size(x, g)    
+    twopower(rank(x)) <= setSize(x, g)    
   }
   
   def validRanks(nl: NodeList, g: Graph, rank: Map[Node, BigInt]) : Boolean = {    
@@ -77,6 +86,6 @@ object DisjointSet {
 	       (rank.updated(x, rank(x) + 1), ng) 
 	     }       
      }
-  }
+  } ensuring(res => validRank(x, res._2, res._1) && validRank(y, res._2, res._1))
 
 }

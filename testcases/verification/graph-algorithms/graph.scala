@@ -101,7 +101,7 @@ object Graph {
 
   //transitive operations
   //the following implementations are suboptimal but used only in verification.
-  /*def collectPrevs(g: Graph, nl: NodeList, x: Node): NodeList = {
+  def collectPrevs(g: Graph, nl: NodeList, x: Node): NodeList = {
     nl match {
       case Nil() =>
         Nil()
@@ -117,7 +117,7 @@ object Graph {
     collectPrevs(g.nodes, n)
   }
   
-  def transPrev(g: Graph, n: Node) : NodeList = {
+  /*def transPrev(g: Graph, n: Node) : NodeList = {
     transPrevList(g, prev(g, n))
   }
   
@@ -130,6 +130,10 @@ object Graph {
     }
   } */
   
+  def reachTo(g: Graph, y: Node) : NodeList = {
+    //set of nodes that can reach 'y'
+    prev(g, y) //an under approximation as of now.
+  }
   
   //graph operations
   /**
@@ -145,9 +149,10 @@ object Graph {
       g
     
   } ensuring(res => validGraph(res) && 
-      edgeSize(res) <= edgeSize(g) + 1 && edgeSize(res) >= edgeSize(g) &&
+      contents(reachTo(res, dst)) == contents(reachTo(g, dst)) ++ contents(reachTo(g, src)) 
+      /*edgeSize(res) <= edgeSize(g) + 1 && edgeSize(res) >= edgeSize(g) &&
       succSize(res, src) <= succSize(g, src) + 1 && succSize(res, src) >= succSize(g, src) &&
-      (src == dst || contents(getSuccs(res, src)).contains(dst)))
+      (src == dst || contents(getSuccs(res, src)).contains(dst))*/)
 
   def contains(nl: NodeList, key: Node): Boolean = {
     nl match {
