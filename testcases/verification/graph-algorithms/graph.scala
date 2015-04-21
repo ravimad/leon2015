@@ -21,6 +21,10 @@ object Graph {
     }
   }  
   
+  def disjoint(A: Set[Node], B: Set[Node]) : Boolean = {
+    ((A -- B) == A) && ((B -- A) == A)    
+  }
+  
   //graph invariants    
   def nodeInv(g: Graph, n: Node) : Boolean = {
     !contents(g.nodes).contains(n) || (g.adjlist.contains(n) && {
@@ -102,38 +106,31 @@ object Graph {
   //transitive operations
   //the following implementations are suboptimal but used only in verification.
   def collectPrevs(g: Graph, nl: NodeList, x: Node): NodeList = {
+    require(validGraph(g) && contents(nl).subsetOf(contents(g.nodes)))    
     nl match {
       case Nil() =>
         Nil()
       case Cons(n, tail) =>
-        if (g.adjlist(n).contains(x))
-          Cons(n, collectPrevs(tail))
+        val prevTails = collectPrevs(g, tail, x)
+        if (contains(g.adjlist(n), x) && !contains(prevTails,n))
+          Cons(n, prevTails)
         else
-          collectPrevs(tail)
+          prevTails
     }
-  }
+  } ensuring(res => isDistinct(res))
   
   def prev(g: Graph, n: Node) : NodeList = {
-    collectPrevs(g.nodes, n)
-  }
-  
-  /*def transPrev(g: Graph, n: Node) : NodeList = {
-    transPrevList(g, prev(g, n))
-  }
-  
-  def transPrevList(g: Graph, nl: NodeList) : NodeList = {
-    nl match {
-      case Nil() =>
-        Nil()
-      case Cons(n, tail) => 
-        append(transPrev(g, n), transPrevList(g, tail))
-    }
-  } */
+    require(validGraph(g))
+    
+    collectPrevs(g, g.nodes, n)
+  }  
   
   def reachTo(g: Graph, y: Node) : NodeList = {
+    require(validGraph(g))
     //set of nodes that can reach 'y'
     prev(g, y) //an under approximation as of now.
-  }
+    
+  } ensuring(res => isDistinct(res))
   
   //graph operations
   /**
@@ -148,8 +145,15 @@ object Graph {
     } else
       g
     
-  } ensuring(res => validGraph(res) && 
-      contents(reachTo(res, dst)) == contents(reachTo(g, dst)) ++ contents(reachTo(g, src)) 
+  } ensuring(res => validGraph(res) && {
+	  	//properties of reachTo
+	  	val rsrc = reachTo(g, src)
+	  	val rdst = reachTo(g, dst)
+	  	contents(reachTo(res, dst)) == contents(rdst) ++ contents(rsrc) &&
+	  	(!disjoint(contents(rsrc), contents(rdst)) || size(reachTo(res, dst)) == size(rdst)  + size(rsrc))
+  	   }
+      
+      
       /*edgeSize(res) <= edgeSize(g) + 1 && edgeSize(res) >= edgeSize(g) &&
       succSize(res, src) <= succSize(g, src) + 1 && succSize(res, src) >= succSize(g, src) &&
       (src == dst || contents(getSuccs(res, src)).contains(dst))*/)
