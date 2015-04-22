@@ -28,6 +28,9 @@ object TVL {
 
 object Util {
     
+  val zero = InfiniteIntegerLiteral(0)
+  val one = InfiniteIntegerLiteral(1)
+  
   /**
    * Here, we exclude empty units that do not have any modules and empty 
    * modules that do not have any definitions

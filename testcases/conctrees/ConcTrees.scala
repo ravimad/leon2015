@@ -104,7 +104,7 @@ object ConcTrees {
         else
           lookup(r, i - sz)
     }
-  }  ensuring(res => time <= level(xs))
+  }  ensuring(res => rec <= level(xs))
 
   def update[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
     require(xs.valid && !xs.isEmpty)

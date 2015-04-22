@@ -247,7 +247,7 @@ object Main {
         XLangAnalysisPhase
       } else if (settings.verify) {
         //adding time instrumentation phase here        
-        TimeStepsPhase andThen FunctionClosure andThen AnalysisPhase
+        RecursionCountPhase andThen FunctionClosure andThen AnalysisPhase
       } else {
         RestoreMethods andThen FileOutputPhase
       }
