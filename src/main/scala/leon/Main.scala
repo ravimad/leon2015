@@ -4,6 +4,7 @@ package leon
 
 import leon.utils._
 import solvers.SolverFactory
+import leon.transformations._
 
 object Main {
 
@@ -21,6 +22,7 @@ object Main {
       xlang.XLangAnalysisPhase,
       synthesis.SynthesisPhase,
       termination.TerminationPhase,
+      transformations.TimeStepsPhase,
       verification.AnalysisPhase,
       repair.RepairPhase
     )
@@ -244,7 +246,8 @@ object Main {
       } else if (settings.xlang) {
         XLangAnalysisPhase
       } else if (settings.verify) {
-        FunctionClosure andThen AnalysisPhase
+        //adding time instrumentation phase here        
+        TimeStepsPhase andThen FunctionClosure andThen AnalysisPhase
       } else {
         RestoreMethods andThen FileOutputPhase
       }

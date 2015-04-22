@@ -1,3 +1,5 @@
+import leon.instrumentation._
+
 object ConcTrees {
 
   def max(x: BigInt, y: BigInt): BigInt = if (x >= y) x else y
@@ -102,7 +104,7 @@ object ConcTrees {
         else
           lookup(r, i - sz)
     }
-  } //it is easy to prove that this is bounded by height
+  }  ensuring(res => time <= level(xs))
 
   def update[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
     require(xs.valid && !xs.isEmpty)
@@ -114,7 +116,7 @@ object ConcTrees {
         else
           CC(l, update(r, i - sz, y), lv, sz)
     }
-  } //it is easy to prove that this is also bounded by height
+  }
   
   def concat[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid)
