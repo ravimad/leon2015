@@ -9,11 +9,11 @@ import leon.lang._
 object AVLTree  {
   sealed abstract class Tree
   case class Leaf() extends Tree
-  case class Node(left : Tree, value : Int, right: Tree, rank : Int) extends Tree
+  case class Node(left : Tree, value : BigInt, right: Tree, rank : BigInt) extends Tree
 
   sealed abstract class OptionInt
   case class None() extends OptionInt
-  case class Some(i:Int) extends OptionInt
+  case class Some(i:BigInt) extends OptionInt
 
 
   def smallerOption(o1:OptionInt,o2:OptionInt) : Boolean  = {
@@ -41,24 +41,24 @@ object AVLTree  {
     }
   )
 
-  def min(i1:Int, i2:Int) : Int = if (i1<=i2) i1 else i2
-  def max(i1:Int, i2:Int) : Int = if (i1>=i2) i1 else i2
+  def min(i1:BigInt, i2:BigInt) : BigInt = if (i1<=i2) i1 else i2
+  def max(i1:BigInt, i2:BigInt) : BigInt = if (i1>=i2) i1 else i2
 
-  def rank(t: Tree) : Int = {
+  def rank(t: Tree) : BigInt = {
     t match {
       case Leaf() => 0
       case Node(_,_,_,rk) => rk
     }
   }
 
-  def size(t: Tree): Int = {
+  def size(t: Tree): BigInt = {
     (t match {
       case Leaf() => 0
       case Node(l, _, r,_) => size(l) + 1 + size(r)
     })
   } ensuring (_ >= 0)
   
-  def height(t: Tree): Int = {
+  def height(t: Tree): BigInt = {
     t match {
       case Leaf() => 0
       case Node(l, x, r, _) => {
@@ -101,7 +101,7 @@ object AVLTree  {
     case Node(l,_,r,rk) => rankHeight(l) && rankHeight(r) && rk == height(t)
   }
   
-  def balanceFactor(t : Tree) : Int = {
+  def balanceFactor(t : Tree) : BigInt = {
     t match{
       case Leaf() => 0
       case Node(l, _, r, _) => rank(l) - rank(r)
@@ -111,7 +111,7 @@ object AVLTree  {
   def isAVL(t:Tree) : Boolean = {    
     t match {
         case Leaf() => true        
-        case Node(l,_,r,rk) =>  isAVL(l) && isAVL(r) && balanceFactor(t) >= -1 && balanceFactor(t) <= 1 && rankHeight(t) //isBST(t) && 
+        case Node(l,_,r,rk) =>  isAVL(l) && isAVL(r) && balanceFactor(t) >= -1 && balanceFactor(t) <= 1 && rankHeight(t)  
       }    
   } 
 
@@ -140,7 +140,7 @@ object AVLTree  {
     }
   }
  
-  def unbalancedInsert(t: Tree, e : Int) : Tree = {
+  def unbalancedInsert(t: Tree, e : BigInt) : Tree = {
     require(isAVL(t))
     t match {
       case Leaf() => Node(Leaf(), e, Leaf(), 1)
@@ -157,7 +157,7 @@ object AVLTree  {
     }
   } 
                     
-  def avlInsert(t: Tree, e : Int) : Tree = {    
+  def avlInsert(t: Tree, e : BigInt) : Tree = {    
     require(isAVL(t))
     
     balance(unbalancedInsert(t,e))
