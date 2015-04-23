@@ -38,7 +38,7 @@ object RecursionCountPhase extends InstrumentationPhase {
           }
           
           /**
-           * TODO: should do much more simplification for more readable code.
+           * Need to do constant propagation at the end of instrumentation
            */
           def instrumentation(e: Expr, subInsts: Seq[Expr]): Expr = e match {
             case t: Terminal => zero
