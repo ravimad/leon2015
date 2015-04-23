@@ -2,10 +2,6 @@ import leon.lang._
 import leon.collection._
 
 object HeapSort {
-  /*  sealed abstract class List
-  case class Cons(head:BigInt,tail:List) extends List
-  case class Nil() extends List
-*/
   sealed abstract class Heap
   case class Leaf() extends Heap
   case class Node(rk: BigInt, value: BigInt, left: Heap, right: Heap) extends Heap
@@ -21,19 +17,9 @@ object HeapSort {
     case Leaf() => 0
     case Node(rk, _, _, _) => rk
   }
-  
-  def max(x: BigInt, y: BigInt) : BigInt = {
-    if(x <= y) y else x
-  }
 
-  def listMax(l: List[BigInt]): BigInt = {
-    require(l != Nil[BigInt]())
-    l match {
-      case Cons(x, Nil()) =>
-        x
-      case Cons(x, tail) =>
-        max(x, listMax(tail))        
-    }
+  def max(x: BigInt, y: BigInt): BigInt = {
+    if (x <= y) y else x
   }
 
   def rootVal(h: Heap): BigInt = {
@@ -67,19 +53,6 @@ object HeapSort {
     }
   }
 
-  def listToSet(l: List[BigInt]): Set[BigInt] = {
-    l match {
-      case Nil() => Set()
-      case Cons(x, tail) =>
-        Set(x) ++ listToSet(tail)
-    }
-  } 
-
-  def findMax(h: Heap): BigInt = {
-    require(hasLeftistProperty(h) && h != Leaf())
-    rootVal(h)
-  }
-
   def merge(h1: Heap, h2: Heap): Heap = {
     require(hasLeftistProperty(h1) && hasLeftistProperty(h2))
     h1 match {
@@ -96,13 +69,13 @@ object HeapSort {
   } ensuring (res =>
     //the root value is one of the root values of the merged heaps
     (res match {
-    	case Leaf() => h1 == Leaf() && h2 == Leaf()
-    	case Node(_, v, _, _) =>
-    	(h1 != Leaf() && rootVal(h1) == v) || (h2 != Leaf() && rootVal(h2) == v)
-  	}) &&
-    hasLeftistProperty(res) &&
-    heapSize(h1) + heapSize(h2) == heapSize(res) &&
-    heapContents(h1) ++ heapContents(h2) == heapContents(res))
+      case Leaf() => h1 == Leaf() && h2 == Leaf()
+      case Node(_, v, _, _) =>
+        (h1 != Leaf() && rootVal(h1) == v) || (h2 != Leaf() && rootVal(h2) == v)
+    }) &&
+      hasLeftistProperty(res) &&
+      heapSize(h1) + heapSize(h2) == heapSize(res) &&
+      heapContents(h1) ++ heapContents(h2) == heapContents(res))
 
   private def makeT(value: BigInt, left: Heap, right: Heap): Heap = {
     if (rank(left) >= rank(right))
@@ -118,62 +91,57 @@ object HeapSort {
 
   } ensuring (res => heapSize(res) == heapSize(heap) + 1 &&
     heapContents(res) == Set(element) ++ heapContents(heap))
-    
-  def append(l1: List[BigInt], l2: List[BigInt]) : List[BigInt] = {
-    l1 match {
-      case Nil() => l2
-      case Cons(x, tail) =>
-        Cons(x, append(tail, l2))
-    }
-  } ensuring(res => res == Nil[BigInt]() || 
-      ((l1 == Nil[BigInt]() && listMax(res) == listMax(l2)) ||
-          (l2 == Nil[BigInt]() && listMax(res) == listMax(l1)) ||
-          (listMax(res) == max(listMax(l1),listMax(l2))))) 
 
-  def heapElements(t: Heap): List[BigInt] = {
-    t match {
-      case Leaf() => Nil()
-      case Node(_, v, l, r) =>
-        v :: append(heapElements(l), heapElements(r))
-    }
-  } //ensurign(res => t == Leaf() || rootVal(t) == max(res))
-  //ensuring (res => heapContents(t) == listToSet(res))
-  
+  def findMax(h: Heap): BigInt = {
+    require(hasLeftistProperty(h) && h != Leaf())
+    rootVal(h)
+  }
+
   def removeMax(h: Heap): Heap = {
     require(hasLeftistProperty(h))
     h match {
       case Node(_, _, l, r) => merge(l, r)
       case l @ Leaf() => l
     }
+  } ensuring (res => hasLeftistProperty(res) &&
+    (h == Leaf() || heapContents(h) == heapContents(res) ++ Set(findMax(h))) &&
+    (res == Leaf() || findMax(res) <= findMax(h)))
+
+  def sortedDescending(l: List[BigInt]): Boolean = {
+    l match {
+      case Nil() => true
+      case Cons(x, Nil()) => true
+      case Cons(x, tail @ Cons(y, _)) =>
+        (x >= y) && sortedDescending(tail)
+    }
   }
 
-  def listSize(l: List[BigInt]): BigInt = (l match {
-    case Nil() => 0
-    case Cons(_, xs) => 1 + listSize(xs)
-  }) ensuring (_ >= 0)
-
-  def removeElements(h: Heap, l: List[BigInt]): List[BigInt] = {
+  def removeElements(h: Heap): List[BigInt] = {
     require(hasLeftistProperty(h))
     h match {
-      case Leaf() => l
-      case _ => removeElements(removeMax(h), Cons(findMax(h), l))
-
+      case Leaf() => Nil[BigInt]()
+      case _ =>
+        Cons(findMax(h), removeElements(removeMax(h)))
     }
-  } ensuring (res => heapSize(h) + listSize(l) == listSize(res))
+  } ensuring (res => sortedDescending(res) &&
+    heapSize(h) == res.size && //sizes are preserved 
+    heapContents(h) == res.content //contents are preserved
+    )
 
-  def buildHeap(l: List[BigInt], h: Heap): Heap = {
-    require(hasLeftistProperty(h))
+  def buildHeap(l: List[BigInt]): Heap = {
     l match {
-      case Nil() => h
-      case Cons(x, xs) => buildHeap(xs, insert(x, h))
-
+      case Nil() => Leaf()
+      case Cons(x, xs) => insert(x, buildHeap(xs))
     }
-  } ensuring (res => hasLeftistProperty(res) && heapSize(h) + listSize(l) == heapSize(res))
+  } ensuring (res => hasLeftistProperty(res) &&
+    heapContents(res) == l.content && //contents are preserved
+    heapSize(res) == l.size) //sizes are preserved       
 
-  def sort(l: List[BigInt]): List[BigInt] = ({
+  def heapSort(l: List[BigInt]): List[BigInt] = ({
 
-    val heap = buildHeap(l, Leaf())
-    removeElements(heap, Nil())
+    val heap = buildHeap(l)
+    removeElements(heap)
 
-  }) ensuring (res => listSize(res) == listSize(l))
+  }) ensuring (res => sortedDescending(res) && //elements are in descending order
+    res.size == l.size && res.content == l.content) //contents and sizes are preserved    
 }
