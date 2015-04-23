@@ -32,7 +32,8 @@ object TimeStepsPhase extends InstrumentationPhase {
                 (acc: Expr, subeTime: Expr) => Plus(subeTime, acc))
           }          
           def instrumentIfThenElse(e: IfExpr, condInst: Expr, thenInst: Expr, elzeInst: Expr): (Expr, Expr) = {
-            (Plus(condInst, thenInst), Plus(condInst, elzeInst))
+            val costIf = costOfExpr(e)
+            (Plus(costIf, Plus(condInst, thenInst)), Plus(costIf, Plus(condInst, elzeInst)))
           }
         }
       }

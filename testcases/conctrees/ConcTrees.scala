@@ -191,7 +191,7 @@ object ConcTrees {
           }
       }
     }
-  } //ensuring(res => rec <= )
+  } ensuring(res => rec <= abs(level(xs) - level(ys)))
 }
 
 

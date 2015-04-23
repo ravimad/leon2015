@@ -26,21 +26,37 @@ object RecursionCountPhase extends InstrumentationPhase {
 
       def instrumentType: TypeTree = IntegerType
 
-      def getExprInstrumenter(fd: FunDef, funMap: Map[FunDef, FunDef]): ExprInstrumenter = {
+      def getExprInstrumenter(fd: FunDef, funMap: Map[FunDef, FunDef]): ExprInstrumenter = {               
         new ExprInstrumenter(fd, funMap) {
+
+          def addSubInstsIfNonZero(subInsts: Seq[Expr], init: Expr): Expr = {                        
+            subInsts.foldLeft(zero: Expr) {
+              case (acc, subinst) if subinst != zero =>
+                if (acc == zero) subinst
+                else Plus(acc, subinst)
+            }            
+          }
+          
+          /**
+           * TODO: should do much more simplification for more readable code.
+           */
           def instrumentation(e: Expr, subInsts: Seq[Expr]): Expr = e match {
             case t: Terminal => zero
             case FunctionInvocation(TypedFunDef(`fd`, _), _) => // is this is a direct recursive call ?
               //Note that the last element of subInsts is the instExpr of the invoked function
-              Plus(one, subInsts.last) //this adds the costs of recursive invocations 
+              //Plus(one, subInsts.last) //this adds the costs of recursive invocations
+              addSubInstsIfNonZero(subInsts, one)
             case FunctionInvocation(TypedFunDef(callee, _), _) if(cg.transitivelyCalls(callee, fd)) =>
               //this is an indirect recursive call
-              Plus(one, subInsts.last) 
-            case _ => zero
+              addSubInstsIfNonZero(subInsts, one)
+              //Plus(one, subInsts.last) 
+            case _ => 
+              //add the cost of every sub-expression
+              addSubInstsIfNonZero(subInsts, zero)
           }
 
           def instrumentIfThenElse(e: IfExpr, condInst: Expr, thenInst: Expr, elzeInst: Expr): (Expr, Expr) = {
-            (zero, zero)
+            (Plus(condInst, thenInst), Plus(condInst, elzeInst))
           }
         }
       }
