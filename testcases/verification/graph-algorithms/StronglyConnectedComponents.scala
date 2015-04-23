@@ -36,7 +36,7 @@ object SCC {
   
    /**
    * Strongly connnected components
-   * TODO: need to do something to collet strongly connected components.
+   * TODO: need to do something to collect strongly connected components.
    * Probably use a forward propagation. 
    */
   def strongconnect(g: Graph, dfsStack: NodeList,

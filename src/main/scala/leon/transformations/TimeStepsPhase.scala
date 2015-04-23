@@ -13,16 +13,31 @@ object TimeStepsPhase extends InstrumentationPhase {
   val name = "Time Instrumentation Phase"
   val description = "Allows use of `time` in the postconditions"
 
-  def IsInstrumentationVariable(p: Program): (Expr => Boolean) = {
-    val timeFun = Library(p).lookup("leon.instrumentation.time") collect { case fd: FunDef => fd }
-    (e: Expr) => e match {
-      case FunctionInvocation(tfd, _) if (tfd.fd == timeFun.get) =>
-        true
-      case _ => false
+  def getProgramInstrumenter(p: Program) = {
+    new ProgramInstrumenter(p) {
+      val timeFun = Library(p).lookup("leon.instrumentation.time") collect { case fd: FunDef => fd }
+      def instrumentVariable(e: Expr): Boolean = e match {
+        case FunctionInvocation(tfd, _) if (tfd.fd == timeFun.get) =>
+          true
+        case _ => false
+      }
+      def instrumentType: TypeTree = IntegerType
+
+      def getExprInstrumenter(fd: FunDef, funMap: Map[FunDef, FunDef]): ExprInstrumenter = {
+        new ExprInstrumenter(fd, funMap) {
+          def instrumentation(e: Expr, subInsts: Seq[Expr]): Expr = e match {
+            case t: Terminal => costOfExpr(t)
+            case _ =>
+              subInsts.foldLeft(costOfExpr(e): Expr)(
+                (acc: Expr, subeTime: Expr) => Plus(subeTime, acc))
+          }          
+          def instrumentIfThenElse(e: IfExpr, condInst: Expr, thenInst: Expr, elzeInst: Expr): (Expr, Expr) = {
+            (Plus(condInst, thenInst), Plus(condInst, elzeInst))
+          }
+        }
+      }
     }
   }
-
-  def instrumentationType: TypeTree = IntegerType
 
   def costOf(e: Expr): Int =
     e match {
@@ -32,15 +47,4 @@ object TimeStepsPhase extends InstrumentationPhase {
     }
 
   def costOfExpr(e: Expr) = InfiniteIntegerLiteral(costOf(e))
-
-  def instrumentation(fd: FunDef, e: Expr, subInsts: Seq[Expr]): Expr = e match {
-    case t: Terminal => costOfExpr(t)
-    case _ =>
-      subInsts.foldLeft(costOfExpr(e): Expr)(
-        (acc: Expr, subeTime: Expr) => Plus(subeTime, acc))
-  }
-
-  def instrumentIfThenElse(e: IfExpr, condInst: Expr, thenInst: Expr, elzeInst: Expr): (Expr, Expr) = {
-    (Plus(condInst, thenInst), Plus(condInst, elzeInst))
-  }
 }

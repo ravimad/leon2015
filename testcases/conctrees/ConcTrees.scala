@@ -3,6 +3,7 @@ import leon.instrumentation._
 object ConcTrees {
 
   def max(x: BigInt, y: BigInt): BigInt = if (x >= y) x else y
+  def abs(x: BigInt): BigInt = if(x < 0) -x else x 
 
   sealed abstract class Conc[T] {
     
@@ -11,7 +12,7 @@ object ConcTrees {
     }
     
     def valid : Boolean = {
-      concInv && sizeInv && levelInv
+      concInv && sizeInv && levelInv && balanced
     }
     
     //conc invariant
@@ -54,12 +55,23 @@ object ConcTrees {
         l.levelInv && r.levelInv && lvl == level(this)
     }    
 
-    def balanceFactor: BigInt = {
+    /*def balanceFactor: BigInt = {
       this match {
         case Empty() => 0
         case Single(_) => 0
         case CC(l, r, _, _) => level(l) - level(r)
       }
+    }*/
+    
+    def balanced : Boolean = {
+      this match {
+        case Empty() => true
+        case Single(_) => true
+        case CC(l, r, _,_) => 
+          level(l) - level(r) >= -1 && level(l) - level(r) <= 1 && 
+          l.balanced && r.balanced
+      }
+      
     }
   }
 
@@ -83,7 +95,7 @@ object ConcTrees {
       case CC(l, r, _, _) =>
         1 + max(level(l), level(r))
     }
-  }
+  } ensuring(_ >= 0)
 
   def size[T](t: Conc[T]): BigInt = {
     t match {
@@ -92,7 +104,7 @@ object ConcTrees {
       case CC(l, r, _, _) =>
         size(l) + size(r)
     }
-  }
+  } ensuring(_ >= 0)
 
   def lookup[T](xs: Conc[T], i: BigInt): T = {
     require(xs.valid && !xs.isEmpty)
@@ -104,7 +116,7 @@ object ConcTrees {
         else
           lookup(r, i - sz)
     }
-  }  ensuring(res => rec <= level(xs))
+  } ensuring(res => rec <= level(xs)) //lookup time is linear in the level
 
   def update[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
     require(xs.valid && !xs.isEmpty)
@@ -116,7 +128,7 @@ object ConcTrees {
         else
           CC(l, update(r, i - sz, y), lv, sz)
     }
-  }
+  } ensuring(res => res.valid && rec <= level(xs)) //update time is linear in the level
   
   def concat[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid)
@@ -179,7 +191,7 @@ object ConcTrees {
           }
       }
     }
-  } //should be easy to prove the bound on the recursion
+  } //ensuring(res => rec <= )
 }
 
 
