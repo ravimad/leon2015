@@ -26,37 +26,64 @@ object RecursionCountPhase extends InstrumentationPhase {
 
       def instrumentType: TypeTree = IntegerType
 
-      def getExprInstrumenter(fd: FunDef, funMap: Map[FunDef, FunDef]): ExprInstrumenter = {               
+      val sccs = cg.graph.sccs.flatMap { scc =>
+        scc.map(fd => (fd -> scc.toSet))
+      }.toMap
+
+      /**
+       * Instrument only those functions that are in the same sccs of the root functions
+       */
+      def functionsToInstrument(rootFuns: Set[FunDef]): Set[FunDef] = {
+        rootFuns.flatMap(sccs.apply _)
+        //        val sccs = cg.graph.sccs
+        //        sccs.filterNot(_.toSet.intersect(rootFuns).isEmpty).flatten.toSet
+      }
+
+      def getExprInstrumenter(fd: FunDef, funMap: Map[FunDef, FunDef]): ExprInstrumenter = {
         new ExprInstrumenter(fd, funMap) {
 
-          def addSubInstsIfNonZero(subInsts: Seq[Expr], init: Expr): Expr = {                        
-            subInsts.foldLeft(zero: Expr) {
+          def shouldInstrument(e: Expr): Boolean = {
+            exists {
+              //is this a mutually recursive call ?
+              case FunctionInvocation(TypedFunDef(callee, _), _) if sccs(fd)(callee) =>
+                true
+              case _ => false
+            }(e)
+          }
+
+          def addSubInstsIfNonZero(subInsts: Seq[Expr], init: Expr): Expr = {
+            subInsts.foldLeft(init) {
               case (acc, subinst) if subinst != zero =>
                 if (acc == zero) subinst
                 else Plus(acc, subinst)
-            }            
+            }
           }
-          
+
           /**
            * Need to do constant propagation at the end of instrumentation
            */
-          def instrumentation(e: Expr, subInsts: Seq[Expr]): Expr = e match {
-            case t: Terminal => zero
-            case FunctionInvocation(TypedFunDef(`fd`, _), _) => // is this is a direct recursive call ?
+          def instrument(e: Expr, subInsts: Seq[Expr]): Expr = e match {
+            case FunctionInvocation(TypedFunDef(callee, _), _) if sccs(fd)(callee) =>
+              //this is a recursive call
               //Note that the last element of subInsts is the instExpr of the invoked function
-              //Plus(one, subInsts.last) //this adds the costs of recursive invocations
               addSubInstsIfNonZero(subInsts, one)
-            case FunctionInvocation(TypedFunDef(callee, _), _) if(cg.transitivelyCalls(callee, fd)) =>
-              //this is an indirect recursive call
-              addSubInstsIfNonZero(subInsts, one)
-              //Plus(one, subInsts.last) 
-            case _ => 
+            case _ =>
               //add the cost of every sub-expression
               addSubInstsIfNonZero(subInsts, zero)
           }
 
-          def instrumentIfThenElse(e: IfExpr, condInst: Expr, thenInst: Expr, elzeInst: Expr): (Expr, Expr) = {
-            (Plus(condInst, thenInst), Plus(condInst, elzeInst))
+          def instrumentIfThenElse(e: IfExpr, condInst: Option[Expr],
+            thenInst: Option[Expr], elzeInst: Option[Expr]): (Expr, Expr) = {
+            def optionToList(opte: Option[Expr]) = opte match {
+              case Some(x) => List(x)
+              case _ => List()
+            }
+            val cinst = optionToList(condInst)
+            val tinst = optionToList(thenInst)
+            val einst = optionToList(elzeInst)
+
+            (addSubInstsIfNonZero(cinst ++ tinst, zero),
+              addSubInstsIfNonZero(cinst ++ einst, zero))
           }
         }
       }

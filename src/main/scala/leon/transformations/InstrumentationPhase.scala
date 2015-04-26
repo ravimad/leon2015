@@ -31,21 +31,20 @@ abstract class InstrumentationPhase extends TransformationPhase {
     protected val cg = CallGraphUtil.constructCallGraph(program, onlyBody = true)
 
     def functionsToInstrument(rootFuns: Set[FunDef]): Set[FunDef]
-    //find all functions transitively called from rootFuncs (here ignore functions called via pre/post conditions)      
-    //rootFuncs.foldLeft(Set[FunDef]())((acc, fd) => acc ++ cg.transitiveCallees(fd))
 
-    val rootFuncs = program.definedFunctions.collect {
-      case fd if (fd.hasPostcondition &&
-        exists(instrumentVariable)(fd.postcondition.get)) =>
-        //println("Found a function with time: "+fd)
-        fd
-    }.toSet
-
-    val instFuncs = functionsToInstrument(rootFuncs)
+    var instFuncs: Set[FunDef] = _ //set in the function apply (TODO: get rid of this mutable state)
 
     def apply(): Program = {
       // Map from old fundefs to new fundefs
       var funMap = Map[FunDef, FunDef]()
+
+      val rootFuncs = program.definedFunctions.collect {
+        case fd if (fd.hasPostcondition &&
+          exists(instrumentVariable)(fd.postcondition.get)) =>
+          //println("Found a function with time: "+fd)
+          fd
+      }.toSet
+      instFuncs = functionsToInstrument(rootFuncs)
 
       //create new functions.  Augment the return type of a function iff the postcondition uses     
       //the instrumentation variable or if the function is transitively called from such a function
@@ -164,8 +163,8 @@ abstract class InstrumentationPhase extends TransformationPhase {
       /**
        * Instrument procedure specialized for if-then-else
        */
-      def instrumentIfThenElse(e: IfExpr, condInst: Option[Expr], 
-          thenInst: Option[Expr], elzeInst: Option[Expr]): (Expr, Expr)
+      def instrumentIfThenElse(e: IfExpr, condInst: Option[Expr],
+        thenInst: Option[Expr], elzeInst: Option[Expr]): (Expr, Expr)
 
       // Should be called only if 'expr' has to be instrumented
       // Returned Expr is always an expr of type tuple (Expr, Int)
@@ -202,7 +201,7 @@ abstract class InstrumentationPhase extends TransformationPhase {
               val newfd = funMap(tfd.fd)
               val newFunInv = FunctionInvocation(TypedFunDef(newfd, tfd.tps), subeVals)
               //create a variables to store the result of function invocation                              
-              if (instFuncs(newfd)) {
+              if (instFuncs(tfd.fd)) {
                 //this function is also instrumented
                 val resvar = Variable(FreshIdentifier("e", newfd.returnType, true))
                 val valexpr = TupleSelect(resvar, 1)
@@ -245,11 +244,11 @@ abstract class InstrumentationPhase extends TransformationPhase {
        */
       def transform(e: Expr): Expr = e match {
         case Let(i, v, b) =>
-          val (ni, nv, nb, instv) = if(shouldInstrument(v)){
+          val (ni, nv, nb, instv) = if (shouldInstrument(v)) {
             val ir = Variable(FreshIdentifier("ir", TupleType(Seq(v.getType, instrumentType)), true))
-            (ir.id, transform(v), replace(Map[Expr, Expr](Variable(i) -> TupleSelect(ir, 1)), b), 
-                List(TupleSelect(ir, 2)))
-          } else 
+            (ir.id, transform(v), replace(Map[Expr, Expr](Variable(i) -> TupleSelect(ir, 1)), b),
+              List(TupleSelect(ir, 2)))
+          } else
             (i, v, b, List())
           if (shouldInstrument(b)) {
             val r = Variable(FreshIdentifier("r", TupleType(Seq(b.getType, instrumentType)), true))
@@ -257,44 +256,44 @@ abstract class InstrumentationPhase extends TransformationPhase {
               Let(r.id, transform(nb), Tuple(Seq(TupleSelect(r, 1),
                 instrument(e, instv :+ TupleSelect(r, 2))))))
           } else {
-        	 Let(ni, nv, Tuple(Seq(nb, instrument(e, instv))))
-          }                            
+            Let(ni, nv, Tuple(Seq(nb, instrument(e, instv))))
+          }
 
         case ife @ IfExpr(cond, th, elze) => {
 
           val (nifCons, condInstExpr) = if (shouldInstrument(cond)) {
             val rescond = Variable(FreshIdentifier("c",
               TupleType(Seq(cond.getType, instrumentType)), true))
-            val recons =  (e1: Expr, e2: Expr) => 
+            val recons = (e1: Expr, e2: Expr) =>
               Let(rescond.id, transform(cond), IfExpr(TupleSelect(rescond, 1), e1, e2))
-              
-            (recons, Some(TupleSelect(rescond, 2)))            
+
+            (recons, Some(TupleSelect(rescond, 2)))
           } else
             ((e1: Expr, e2: Expr) => IfExpr(cond, e1, e2), None)
-            
-          val  (nthenCons, thenInstExpr) = if (shouldInstrument(th)) {
+
+          val (nthenCons, thenInstExpr) = if (shouldInstrument(th)) {
             val resthen = Variable(FreshIdentifier("th",
               TupleType(Seq(th.getType, instrumentType)), true))
-            val recons = (theninst: Expr) => Let(resthen.id, transform(th), 
-                Tuple(Seq(TupleSelect(resthen, 1), theninst)))
-            
+            val recons = (theninst: Expr) => Let(resthen.id, transform(th),
+              Tuple(Seq(TupleSelect(resthen, 1), theninst)))
+
             (recons, Some(TupleSelect(resthen, 2)))
           } else
             ((theninst: Expr) => Tuple(Seq(th, theninst)), None)
-            
+
           val (nelseCons, elseInstExpr) = if (shouldInstrument(elze)) {
             val reselse = Variable(FreshIdentifier("el",
               TupleType(Seq(elze.getType, instrumentType)), true))
-            val recons = (einst: Expr) => Let(reselse.id, transform(elze), 
-                Tuple(Seq(TupleSelect(reselse, 1), einst)))
+            val recons = (einst: Expr) => Let(reselse.id, transform(elze),
+              Tuple(Seq(TupleSelect(reselse, 1), einst)))
             (recons, Some(TupleSelect(reselse, 2)))
           } else
             ((einst: Expr) => Tuple(Seq(elze, einst)), None)
-                    
-          val (thenInst, elseInst) = instrumentIfThenElse(ife, condInstExpr, 
-              thenInstExpr, elseInstExpr)
+
+          val (thenInst, elseInst) = instrumentIfThenElse(ife, condInstExpr,
+            thenInstExpr, elseInstExpr)
           //create a final expression
-          nifCons(nthenCons(thenInst), nelseCons(elseInst))          
+          nifCons(nthenCons(thenInst), nelseCons(elseInst))
         }
 
         // For all other operations, we go through a common tupleifier.

@@ -9,6 +9,9 @@ import purescala.Types._
 import leon.purescala.ScalaPrinter
 import leon.utils._
 
+/**
+ * TODO: to be tested.
+ */
 object TimeStepsPhase extends InstrumentationPhase {
   val name = "Time Instrumentation Phase"
   val description = "Allows use of `time` in the postconditions"
@@ -23,17 +26,26 @@ object TimeStepsPhase extends InstrumentationPhase {
       }
       def instrumentType: TypeTree = IntegerType
 
+      def functionsToInstrument(rootFuns: Set[FunDef]): Set[FunDef] = {
+        //find all functions transitively called from rootFuncs (here ignore functions called via pre/post conditions)      
+        rootFuns.foldLeft(Set[FunDef]())((acc, fd) => acc ++ cg.transitiveCallees(fd))
+      }
+      
       def getExprInstrumenter(fd: FunDef, funMap: Map[FunDef, FunDef]): ExprInstrumenter = {
         new ExprInstrumenter(fd, funMap) {
-          def instrumentation(e: Expr, subInsts: Seq[Expr]): Expr = e match {
+          def shouldInstrument(e : Expr) = true 
+          
+          def instrument(e: Expr, subInsts: Seq[Expr]): Expr = e match {
             case t: Terminal => costOfExpr(t)
             case _ =>
               subInsts.foldLeft(costOfExpr(e): Expr)(
                 (acc: Expr, subeTime: Expr) => Plus(subeTime, acc))
           }          
-          def instrumentIfThenElse(e: IfExpr, condInst: Expr, thenInst: Expr, elzeInst: Expr): (Expr, Expr) = {
+          def instrumentIfThenElse(e: IfExpr, condInst: Option[Expr],
+            thenInst: Option[Expr], elzeInst: Option[Expr]): (Expr, Expr) = {
             val costIf = costOfExpr(e)
-            (Plus(costIf, Plus(condInst, thenInst)), Plus(costIf, Plus(condInst, elzeInst)))
+            (Plus(costIf, Plus(condInst.get, thenInst.get)), 
+                Plus(costIf, Plus(condInst.get, elzeInst.get)))
           }
         }
       }

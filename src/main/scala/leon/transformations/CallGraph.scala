@@ -15,17 +15,23 @@ import purescala.Types._
 class CallGraph {
   val graph = new DirectedGraph[FunDef]()
 
+  def addFunction(fd: FunDef) = graph.addNode(fd)
+
   def addEdgeIfNotPresent(src: FunDef, callee: FunDef): Unit = {
     if (!graph.containsEdge(src, callee))
       graph.addEdge(src, callee)
   }
 
+  def callees(src: FunDef): Set[FunDef] = {
+    graph.getSuccessors(src)
+  }
+
   def transitiveCallees(src: FunDef): Set[FunDef] = {
     graph.BFSReachables(src)
   }
-  
-  def isRecursive(fd: FunDef) : Boolean = {    
-    transitivelyCalls(fd,fd)
+
+  def isRecursive(fd: FunDef): Boolean = {
+    transitivelyCalls(fd, fd)
   }
 
   /**
@@ -41,10 +47,10 @@ class CallGraph {
   }
 
   /**
-   * sorting functions in ascending topological order 
+   * sorting functions in ascending topological order
    */
   def topologicalOrder: Seq[FunDef] = {
-    
+
     def insert(index: Int, l: Seq[FunDef], fd: FunDef): Seq[FunDef] = {
       var i = 0
       var head = Seq[FunDef]()
@@ -99,7 +105,11 @@ object CallGraphUtil {
             funExpr = Tuple(Seq(funExpr, fd.postcondition.get))
         }
         //introduce a new edge for every callee
-        getCallees(funExpr).foreach(cg.addEdgeIfNotPresent(fd, _))
+        val callees = getCallees(funExpr)
+        if (callees.isEmpty)
+          cg.addFunction(fd)
+        else
+          callees.foreach(cg.addEdgeIfNotPresent(fd, _))
       }
     })
     cg
