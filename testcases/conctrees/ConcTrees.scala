@@ -3,44 +3,54 @@ import leon.instrumentation._
 object ConcTrees {
 
   def max(x: BigInt, y: BigInt): BigInt = if (x >= y) x else y
-  def abs(x: BigInt): BigInt = if(x < 0) -x else x 
+  def abs(x: BigInt): BigInt = if (x < 0) -x else x
 
   sealed abstract class Conc[T] {
-    
+
     def isEmpty: Boolean = {
       this == Empty[T]()
     }
-    
-    def valid : Boolean = {
-      concInv && sizeInv && levelInv && balanced
+
+    def valid: Boolean = {
+      concInv && balanced
     }
-    
+
     //conc invariant
-    def concInv : Boolean = this match {
+    def concInv: Boolean = this match {
       case Empty() => true
       case Single(_) => true
-      case CC(l, r, _, _) =>
+      case CC(l, r) =>
         !l.isEmpty && !r.isEmpty && l.concInv && r.concInv
     }
 
-    def levelFld: BigInt = {
+    val level: BigInt = {
+      (this match {
+        case Empty() => 0
+        case Single(x) => 0
+        case CC(l, r) =>
+          1 + max(l.level, r.level)
+      }): BigInt
+    } ensuring (_ >= 0)
+
+    /*val levelFld: BigInt = {
       this match {
         case Empty() => 0
         case Single(x) => 0
         case CC(l, t, lvl, _) => lvl
       }
-    } //ensuring(res => res >= 0)
-    
-    def sizeFld: BigInt = {
-      this match {
+    }*/ //ensuring(res => res >= 0)
+
+    val size: BigInt = {
+      (this match {
         case Empty() => 0
         case Single(x) => 1
-        case CC(l, t, _, sz) => sz
-      }
-    }
+        case CC(l, r) =>
+          l.size + r.size
+      }): BigInt
+    } ensuring (_ >= 0)
 
     //invariant connecting `size` and `sz`
-    def sizeInv: Boolean = this match {
+    /*def sizeInv: Boolean = this match {
       case Empty() => true
       case Single(_) => true
       case CC(l, r, _, s) =>
@@ -53,7 +63,7 @@ object ConcTrees {
       case Single(_) => true
       case CC(l, r, lvl, _) =>
         l.levelInv && r.levelInv && lvl == level(this)
-    }    
+    }    */
 
     /*def balanceFactor: BigInt = {
       this match {
@@ -62,74 +72,52 @@ object ConcTrees {
         case CC(l, r, _, _) => level(l) - level(r)
       }
     }*/
-    
-    def balanced : Boolean = {
+
+    def balanced: Boolean = {
       this match {
         case Empty() => true
         case Single(_) => true
-        case CC(l, r, _,_) => 
-          level(l) - level(r) >= -1 && level(l) - level(r) <= 1 && 
-          l.balanced && r.balanced
+        case CC(l, r) =>
+          l.level - r.level >= -1 && l.level - r.level <= 1 &&
+            l.balanced && r.balanced
       }
-      
+
     }
   }
 
   case class Empty[T]() extends Conc[T]
   case class Single[T](x: T) extends Conc[T]
-  case class CC[T](left: Conc[T], right: Conc[T], lvl: BigInt, sz: BigInt) extends Conc[T]
-  
-  def createCC[T](l: Conc[T], r: Conc[T]) : Conc[T] = {
-   CC(l, r, max(l.levelFld, r.levelFld) + 1, l.sizeFld + r.sizeFld) 
-  }
+  case class CC[T](left: Conc[T], right: Conc[T]) extends Conc[T]
 
   /*class Chunk[@specialized(Byte, Char, Int, Long, Float, Double) T](val array: Array[T], val size: Int, val k: Int) extends Leaf[T] {
     def level = 0
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
 
-  def level[T](t: Conc[T]): BigInt = {
-    t match {
-      case Empty() => 0
-      case Single(x) => 0
-      case CC(l, r, _, _) =>
-        1 + max(level(l), level(r))
-    }
-  } ensuring(_ >= 0)
-
-  def size[T](t: Conc[T]): BigInt = {
-    t match {
-      case Empty() => 0
-      case Single(x) => 1
-      case CC(l, r, _, _) =>
-        size(l) + size(r)
-    }
-  } ensuring(_ >= 0)
-
   def lookup[T](xs: Conc[T], i: BigInt): T = {
     require(xs.valid && !xs.isEmpty)
     xs match {
       case Single(x) => x
-      case CC(l, r, _, sz) =>
-        if (i < sz)
+      case cc @ CC(l, r) =>
+        if (i < cc.size)
           lookup(l, i)
         else
-          lookup(r, i - sz)
+          lookup(r, i - cc.size)
     }
-  } ensuring(res => rec <= level(xs)) //lookup time is linear in the level
+  } ensuring (res => rec <= xs.level) //lookup time is linear in the level
 
   def update[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
     require(xs.valid && !xs.isEmpty)
     xs match {
       case Single(x) => Single(y)
-      case CC(l, r, lv, sz) =>
-        if (i < sz)
-          CC(update(l, i, y), r, lv, sz)
+      case cc @ CC(l, r) =>
+        if (i < cc.size)
+          CC(update(l, i, y), r)
         else
-          CC(l, update(r, i - sz, y), lv, sz)
+          CC(l, update(r, i - cc.size, y))
     }
-  } ensuring(res => res.valid && rec <= level(xs)) //update time is linear in the level
-  
+  } ensuring (res => res.level == xs.level && res.valid && rec <= xs.level) //update time is linear in the level
+
   def concat[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid)
     (xs, ys) match {
@@ -143,55 +131,55 @@ object ConcTrees {
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid && !xs.isEmpty && !ys.isEmpty)
 
-    val diff = ys.levelFld - xs.levelFld
-    if (diff >= -1 && diff <= 1) createCC(xs, ys)
+    val diff = ys.level - xs.level
+    if (diff >= -1 && diff <= 1) CC(xs, ys)
     else if (diff < -1) {
       //ys is smaller than xs
       xs match {
-        case CC(l, r, _, _) =>
-          if (l.levelFld >= r.levelFld) {
+        case CC(l, r) =>
+          if (l.level >= r.level) {
             val nr = concatNonEmpty(r, ys)
-            createCC(l, nr)
+            CC(l, nr)
           } else {
             r match {
-              case CC(rl, rr, _, _) =>
+              case CC(rl, rr) =>
                 val nrr = concatNonEmpty(rr, ys)
-                if (nrr.levelFld == xs.levelFld - 3) {
+                if (nrr.level == xs.level - 3) {
                   val nl = l
-                  val nr = createCC(rl, nrr)
-                  createCC(nl, nr)
+                  val nr = CC(rl, nrr)
+                  CC(nl, nr)
                 } else {
-                  val nl = createCC(l, rl)
+                  val nl = CC(l, rl)
                   val nr = nrr
-                  createCC(nl, nr)
+                  CC(nl, nr)
                 }
             }
           }
       }
     } else {
       ys match {
-        case CC(l, r, _, _) =>
-          if (r.levelFld >= l.levelFld) {
+        case CC(l, r) =>
+          if (r.level >= l.level) {
             val nl = concatNonEmpty(xs, l)
-            createCC(nl, r)
+            CC(nl, r)
           } else {
             l match {
-              case CC(ll, lr, _, _) =>
+              case CC(ll, lr) =>
                 val nll = concatNonEmpty(xs, ll)
-                if (nll.levelFld == ys.levelFld - 3) {
-                  val nl = createCC(nll, lr)
+                if (nll.level == ys.level - 3) {
+                  val nl = CC(nll, lr)
                   val nr = r
-                  createCC(nl, nr)
+                  CC(nl, nr)
                 } else {
                   val nl = nll
-                  val nr = createCC(lr, r)
-                  createCC(nl, nr)
+                  val nr = CC(lr, r)
+                  CC(nl, nr)
                 }
             }
           }
       }
     }
-  } ensuring(res => rec <=abs(level(xs) - level(ys)))
+  } ensuring (res => rec <= abs(xs.level - ys.level))
 }
 
 

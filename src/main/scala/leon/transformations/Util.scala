@@ -44,4 +44,8 @@ object Util {
     })    
   }
   
+  def functionsWOFields(fds: Seq[FunDef]) : Seq[FunDef] ={
+    fds.filter(_.defType == DefType.MethodDef)
+  }
+  
 }  

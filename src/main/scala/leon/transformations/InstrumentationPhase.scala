@@ -8,6 +8,7 @@ import purescala.ExprOps._
 import purescala.Types._
 import leon.purescala.ScalaPrinter
 import leon.utils._
+import Util._
 
 /**
  * A generic instrumentation phase that instruments every expression (function invocation etc.)
@@ -48,7 +49,8 @@ abstract class InstrumentationPhase extends TransformationPhase {
 
       //create new functions.  Augment the return type of a function iff the postcondition uses     
       //the instrumentation variable or if the function is transitively called from such a function
-      for (fd <- program.definedFunctions) {
+      //note: need not instrument fields
+      for (fd <- functionsWOFields(program.definedFunctions)) {
         if (instFuncs.contains(fd)) {
           val newRetType = TupleType(Seq(fd.returnType, instrumentType))
           val freshId = FreshIdentifier(fd.id.name, newRetType)
@@ -65,19 +67,20 @@ abstract class InstrumentationPhase extends TransformationPhase {
 
       def mapExpr(ine: Expr): Expr = {
         simplePostTransform((e: Expr) => e match {
-          case FunctionInvocation(tfd, args) =>
+          case FunctionInvocation(tfd, args) if funMap.contains(tfd.fd) =>
             if (instFuncs.contains(tfd.fd)) {
               TupleSelect(FunctionInvocation(TypedFunDef(funMap(tfd.fd), tfd.tps), args), 1)
             } else {
               val fi = FunctionInvocation(TypedFunDef(funMap(tfd.fd), tfd.tps), args)
               fi
             }
+             
           case _ => e
         })(ine)
       }
 
       def mapBody(body: Expr, f: FunDef) = {
-        //instrument the expression so that it tracks time
+        //instrument the expression 
         if (instFuncs.contains(f)) {
           getExprInstrumenter(f, funMap)(body)
         } else {
@@ -132,7 +135,8 @@ abstract class InstrumentationPhase extends TransformationPhase {
       }
 
       val newprog = Util.copyProgram(program, (defs: Seq[Definition]) => defs.map {
-        case fd: FunDef => funMap(fd)
+        case fd: FunDef if fd.defType == DefType.MethodDef => 
+          funMap(fd)
         case d => d
       })
       println("After Time Instrumentation: \n" + ScalaPrinter.apply(newprog))

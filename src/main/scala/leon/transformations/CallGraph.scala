@@ -8,6 +8,7 @@ import purescala.Expressions._
 import purescala.ExprOps._
 import purescala.Extractors._
 import purescala.Types._
+import Util._
 
 /**
  * This represents a call graph of the functions in the program
@@ -95,7 +96,7 @@ object CallGraphUtil {
   def constructCallGraph(prog: Program, onlyBody: Boolean = false): CallGraph = {
 
     val cg = new CallGraph()
-    prog.definedFunctions.foreach((fd) => {
+    functionsWOFields(prog.definedFunctions).foreach((fd) => {
       if (fd.hasBody) {
         var funExpr = fd.body.get
         if (!onlyBody) {
@@ -118,8 +119,10 @@ object CallGraphUtil {
   def getCallees(expr: Expr): Set[FunDef] = {
     var callees = Set[FunDef]()
     simplePostTransform((expr) => expr match {
-      case FunctionInvocation(callee, args) => {
-        callees += callee.fd
+      //note: do not consider field invocations
+      case FunctionInvocation(TypedFunDef(callee, _), args) 
+      	if callee.defType == DefType.MethodDef => {
+        callees += callee
         expr
       }
       case _ => expr
