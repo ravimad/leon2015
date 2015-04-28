@@ -67,6 +67,10 @@ object RecursionCountPhase extends InstrumentationPhase {
               //this is a recursive call
               //Note that the last element of subInsts is the instExpr of the invoked function
               addSubInstsIfNonZero(subInsts, one)
+            case FunctionInvocation(TypedFunDef(callee, _), _) if instFuncs(callee) =>
+              //this is not a recursive call, so do not consider the cost of the callee
+              //Note that the last element of subInsts is the instExpr of the invoked function
+              addSubInstsIfNonZero(subInsts.take(subInsts.size - 1), zero)
             case _ =>
               //add the cost of every sub-expression
               addSubInstsIfNonZero(subInsts, zero)

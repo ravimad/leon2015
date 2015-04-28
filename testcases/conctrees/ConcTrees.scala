@@ -93,6 +93,10 @@ object ConcTrees {
     def level = 0
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
+  
+  //TOOD: correctness invariants that need to be preserved:
+  //conctrees are functionally equivalent to a indexed array with lookup, update and concatenate operations 
+
 
   def lookup[T](xs: Conc[T], i: BigInt): T = {
     require(xs.valid && !xs.isEmpty)
@@ -127,7 +131,7 @@ object ConcTrees {
         concatNonEmpty(xs, ys)
     }
   }
-
+  
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid && !xs.isEmpty && !ys.isEmpty)
 
@@ -182,9 +186,32 @@ object ConcTrees {
   } ensuring (res => rec <= abs(xs.level - ys.level) && //time bound
       res.level <= max(xs.level, ys.level) + 1 &&  //height invariants
       res.level >= max(xs.level, ys.level)  &&
-      //abs(res.level - max(xs.level, ys.level)) <= 1 &&  
+      //abs(res.level - max(xs.level, ys.level)) <= 1 && // this is not inductive   
       res.valid // proves balance invariant is preserved
       )
+
+  def insert[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
+    require(xs.valid)
+    xs match {
+      case Empty() =>
+        Single(y)
+      case Single(x) =>
+        if (i == 0) 
+          CC(Single(y), xs)
+        else 
+          CC(xs, Single(y))
+      case CC(l, r) if i < l.size =>
+        concatNonEmpty(insert(l, i, y), r) 
+      case CC(l, r) =>
+        concatNonEmpty(l, insert(r, i - l.size, y))      
+    }
+  } ensuring(res => res.valid &&
+      //height of the resulting tree is at most 1 greater than that of the input tree
+      res.level - xs.level <= 1 && res.level >= xs.level && 
+      //note: concat takes O(1) time since the heights of the trees concatenated differ by at most 2
+      // the number of recursive invocations of insert
+      rec <= xs.level
+    )
 }
 
 
