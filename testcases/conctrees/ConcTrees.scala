@@ -32,14 +32,6 @@ object ConcTrees {
       }): BigInt
     } ensuring (_ >= 0)
 
-    /*val levelFld: BigInt = {
-      this match {
-        case Empty() => 0
-        case Single(x) => 0
-        case CC(l, t, lvl, _) => lvl
-      }
-    }*/ //ensuring(res => res >= 0)
-
     val size: BigInt = {
       (this match {
         case Empty() => 0
@@ -47,31 +39,7 @@ object ConcTrees {
         case CC(l, r) =>
           l.size + r.size
       }): BigInt
-    } ensuring (_ >= 0)
-
-    //invariant connecting `size` and `sz`
-    /*def sizeInv: Boolean = this match {
-      case Empty() => true
-      case Single(_) => true
-      case CC(l, r, _, s) =>
-        l.sizeInv && r.sizeInv && s == size(this)
-    }
-
-    //invariant connection `lvl` and 'level' method
-    def levelInv: Boolean = this match {
-      case Empty() => true
-      case Single(_) => true
-      case CC(l, r, lvl, _) =>
-        l.levelInv && r.levelInv && lvl == level(this)
-    }    */
-
-    /*def balanceFactor: BigInt = {
-      this match {
-        case Empty() => 0
-        case Single(_) => 0
-        case CC(l, r, _, _) => level(l) - level(r)
-      }
-    }*/
+    } ensuring (_ >= 0)   
 
     def balanced: Boolean = {
       this match {
@@ -81,7 +49,6 @@ object ConcTrees {
           l.level - r.level >= -1 && l.level - r.level <= 1 &&
             l.balanced && r.balanced
       }
-
     }
   }
 
@@ -89,7 +56,7 @@ object ConcTrees {
   case class Single[T](x: T) extends Conc[T]
   case class CC[T](left: Conc[T], right: Conc[T]) extends Conc[T]
 
-  /*class Chunk[@specialized(Byte, Char, Int, Long, Float, Double) T](val array: Array[T], val size: Int, val k: Int) extends Leaf[T] {
+  /*class Chunk(val array: Array[T], val size: Int, val k: Int) extends Leaf[T] {
     def level = 0
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
@@ -130,7 +97,9 @@ object ConcTrees {
       case _ =>
         concatNonEmpty(xs, ys)
     }
-  }
+  } ensuring(res => res.valid && 
+      res.level <= max(xs.level, ys.level) + 1 &&  //height invariants
+      res.level >= max(xs.level, ys.level))
   
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid && !xs.isEmpty && !ys.isEmpty)
@@ -212,6 +181,36 @@ object ConcTrees {
       // the number of recursive invocations of insert
       rec <= xs.level
     )
+   
+    //TODO: why with instrumentation we are not able prove the running time here ?
+    //Does 'leon' correctly handle, tuple inside tuples ?
+  def split[T](xs: Conc[T], n: BigInt): (Conc[T], Conc[T], BigInt) = {
+    require(xs.valid)
+    xs match {
+      case Empty() =>
+        (Empty(), Empty(), 0)
+      case s@Single(x) =>
+        if (n == 0) {          
+          (Empty(), s, 0)
+        } else {
+          (s, Empty(), 0)          
+        }  
+      case CC(l, r) =>
+        if (n < l.size) {
+          val (ll, lr, t) = split(l, n)                    
+          (ll, concat(lr, r), t + 1)
+        } else if (n > l.size) {
+          val (rl, rr, t) = split(r, n - l.size)                    
+          (concat(l, rl), rr, t + 1)
+        } else {
+          (l, r,0) 
+        }           
+    }
+  } ensuring(res => res._1.valid && res._2.valid &&        
+      xs.level >= res._1.level && xs.level >= res._2.level &&      
+      // the number of recursive invocations of split
+      res._3 <= xs.level
+    )  
 }
 
 
