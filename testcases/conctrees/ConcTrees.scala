@@ -179,7 +179,12 @@ object ConcTrees {
           }
       }
     }
-  } ensuring (res => rec <= abs(xs.level - ys.level))
+  } ensuring (res => rec <= abs(xs.level - ys.level) && //time bound
+      res.level <= max(xs.level, ys.level) + 1 &&  //height invariants
+      res.level >= max(xs.level, ys.level)  &&
+      //abs(res.level - max(xs.level, ys.level)) <= 1 &&  
+      res.valid // proves balance invariant is preserved
+      )
 }
 
 
