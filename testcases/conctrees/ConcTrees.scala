@@ -229,49 +229,6 @@ object ConcTrees {
       })
   }.holds
 
-  // correctness of `concat` operations
-  /*def concatNonEmptyCorrectness[T](xs: Conc[T], ys: Conc[T]): Boolean = {
-    require(xs.valid && ys.valid && !xs.isEmpty && !ys.isEmpty) // the induction scheme
-    ({
-      //induction scheme follows the structure of the `concatNonEmpty` procedure
-      val diff = ys.level - xs.level
-      if (diff >= -1 && diff <= 1) true
-      else if (diff < -1) {
-        xs match {
-          case CC(l, r) =>
-            appendAssoc(l.toList, r.toList, ys.toList) && //instantiation of associativity of concatenation
-              (if (l.level >= r.level) {
-                concatNonEmptyCorrectness(r, ys)
-              } else {
-                r match {
-                  case CC(rl, rr) =>
-                    concatNonEmptyCorrectness(rr, ys) &&
-                      appendAssoc(rl.toList, rr.toList, ys.toList) &&
-                      appendAssoc(l.toList, rl.toList, rr.toList ++ ys.toList)
-                }
-              })
-        }
-      } else {
-        ys match {
-          case CC(l, r) =>
-            appendAssoc(xs.toList, l.toList, r.toList) &&
-              (if (r.level >= l.level) {
-                concatNonEmptyCorrectness(xs, l)
-              } else {
-                l match {
-                  case CC(ll, lr) =>
-                    concatNonEmptyCorrectness(xs, ll) &&
-                      appendAssoc(xs.toList, ll.toList, lr.toList) &&
-                      appendAssoc(xs.toList ++ ll.toList, lr.toList, r.toList)
-                }
-              })
-        }
-      }
-    }) &&
-      // the actual lemma: 
-      (concatNonEmpty(xs, ys)._1.toList == xs.toList ++ ys.toList)
-  }.holds*/
-
   def insert[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && i >= 0 && i <= xs.size) //note the precondition
     xs match {
