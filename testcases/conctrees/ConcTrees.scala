@@ -1,4 +1,7 @@
 import leon.instrumentation._
+import leon.collection._
+import leon.lang._
+import ListSpecs._
 
 object ConcTrees {
 
@@ -39,7 +42,7 @@ object ConcTrees {
         case CC(l, r) =>
           l.size + r.size
       }): BigInt
-    } ensuring (_ >= 0)   
+    } ensuring (_ >= 0)
 
     def balanced: Boolean = {
       this match {
@@ -50,6 +53,17 @@ object ConcTrees {
             l.balanced && r.balanced
       }
     }
+    
+    // abstraction functions from conctrees to ordered lists
+    def toList: List[T] = {
+      this match {
+        case Empty() => Nil[T]()
+        case Single(x) => Cons(x, Nil[T]())
+        case CC(l, r) => 
+          //left elements preceed the right elements in the ordering
+          l.toList ++ r.toList
+      }
+    } ensuring(res => res.size == this.size)
   }
 
   case class Empty[T]() extends Conc[T]
@@ -60,71 +74,113 @@ object ConcTrees {
     def level = 0
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
-  
-  //TOOD: correctness invariants that need to be preserved:
-  //conctrees are functionally equivalent to a indexed array with lookup, update and concatenate operations 
 
+  // conctrees are functionally equivalent to a indexed list with lookup, update and concatenate operations.
+  // The following are operations over an indexed list.
+  
+  //TODO: we can later enforce that the index is within the size of the list
+  // For now, if `i` < 0 then return the first element, 
+  // if i >= size of the list, return the last element 
+  /*def elem[T](l: List[T], i: BigInt) : T = {
+    require(!l.isEmpty)    
+    l match {      
+      case Cons(x, Nil()) => x
+      case Cons(h, tail) => 
+        if(i <= 0) h
+        else elem(tail, i - 1)
+    }
+  }  
+  
+  def append[T](l1: List[T], l2: List[T]): List[T] = {
+    l1 match {
+      case Nil() => l2
+      case Cons(x, tail) =>
+        Cons(x, append(tail, l2))
+    }
+  } ensuring (res => (l2 != Nil[T]() || res == l1))*/
+      
+  // concTree operations
 
   def lookup[T](xs: Conc[T], i: BigInt): T = {
-    require(xs.valid && !xs.isEmpty)
+    require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
       case Single(x) => x
-      case cc @ CC(l, r) =>
-        if (i < cc.size)
+      case CC(l, r) =>
+        if (i < l.size)
           lookup(l, i)
         else
-          lookup(r, i - cc.size)
+          lookup(r, i - l.size)
     }
-  } ensuring (res => rec <= xs.level) //lookup time is linear in the level
+  } ensuring (res => rec <= xs.level //lookup time is linear in the level
+      )
+		 
+  def lookupCorrectness[T](xs: Conc[T], i: BigInt): Boolean = {
+    require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
+    // the induction scheme
+    (xs match {      
+      case cc @ CC(l, r) =>
+        (if (i < cc.size)
+          lookupCorrectness(l, i)
+        else
+          lookupCorrectness(r, i - cc.size)
+        ) &&
+        //additional axioms
+        appendIndex(l.toList, r.toList, i)
+      case _ => true
+    }) &&
+    // the actual lemma: lookup returns the `i`th element in the list corresponding to `xs`
+    (xs.toList(i) == lookup(xs, i))
+  }.holds		 		 
 
   def update[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
     require(xs.valid && !xs.isEmpty)
     xs match {
       case Single(x) => Single(y)
-      case cc @ CC(l, r) =>
-        if (i < cc.size)
+      case CC(l, r) =>
+        if (i < l.size)
           CC(update(l, i, y), r)
         else
-          CC(l, update(r, i - cc.size, y))
+          CC(l, update(r, i - l.size, y))
     }
   } ensuring (res => res.level == xs.level && res.valid && rec <= xs.level) //update time is linear in the level
 
-  def concat[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
+  def concat[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid)
     (xs, ys) match {
-      case (xs, Empty()) => xs
-      case (Empty(), ys) => ys
+      case (xs, Empty()) => (xs, 0)
+      case (Empty(), ys) => (ys, 0)
       case _ =>
         concatNonEmpty(xs, ys)
     }
-  } ensuring(res => res.valid && 
-      res.level <= max(xs.level, ys.level) + 1 &&  //height invariants
-      res.level >= max(xs.level, ys.level))
-  
-  def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
+  } ensuring (res => res._1.valid &&
+    res._1.level <= max(xs.level, ys.level) + 1 && //height invariants
+    res._1.level >= max(xs.level, ys.level))
+
+  def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid && !xs.isEmpty && !ys.isEmpty)
 
     val diff = ys.level - xs.level
-    if (diff >= -1 && diff <= 1) CC(xs, ys)
+    if (diff >= -1 && diff <= 1)
+      (CC(xs, ys), 0)
     else if (diff < -1) {
       //ys is smaller than xs
       xs match {
         case CC(l, r) =>
           if (l.level >= r.level) {
-            val nr = concatNonEmpty(r, ys)
-            CC(l, nr)
+            val (nr, t) = concatNonEmpty(r, ys)
+            (CC(l, nr), t + 1)
           } else {
             r match {
               case CC(rl, rr) =>
-                val nrr = concatNonEmpty(rr, ys)
+                val (nrr, t) = concatNonEmpty(rr, ys)
                 if (nrr.level == xs.level - 3) {
                   val nl = l
                   val nr = CC(rl, nrr)
-                  CC(nl, nr)
+                  (CC(nl, nr), t + 1)
                 } else {
                   val nl = CC(l, rl)
                   val nr = nrr
-                  CC(nl, nr)
+                  (CC(nl, nr), t + 1)
                 }
             }
           }
@@ -133,31 +189,31 @@ object ConcTrees {
       ys match {
         case CC(l, r) =>
           if (r.level >= l.level) {
-            val nl = concatNonEmpty(xs, l)
-            CC(nl, r)
+            val (nl, t) = concatNonEmpty(xs, l)
+            (CC(nl, r), t + 1)
           } else {
             l match {
               case CC(ll, lr) =>
-                val nll = concatNonEmpty(xs, ll)
+                val (nll, t) = concatNonEmpty(xs, ll)
                 if (nll.level == ys.level - 3) {
                   val nl = CC(nll, lr)
                   val nr = r
-                  CC(nl, nr)
+                  (CC(nl, nr), t + 1)
                 } else {
                   val nl = nll
                   val nr = CC(lr, r)
-                  CC(nl, nr)
+                  (CC(nl, nr), t + 1)
                 }
             }
           }
       }
     }
-  } ensuring (res => rec <= abs(xs.level - ys.level) && //time bound
-      res.level <= max(xs.level, ys.level) + 1 &&  //height invariants
-      res.level >= max(xs.level, ys.level)  &&
-      //abs(res.level - max(xs.level, ys.level)) <= 1 && // this is not inductive   
-      res.valid // proves balance invariant is preserved
-      )
+  } ensuring (res => res._2 <= abs(xs.level - ys.level) && //time bound
+    res._1.level <= max(xs.level, ys.level) + 1 && //height invariants
+    res._1.level >= max(xs.level, ys.level) &&
+    //abs(res.level - max(xs.level, ys.level)) <= 1 && // this is not inductive   
+    res._1.valid // proves balance invariant is preserved
+    )
 
   def insert[T](xs: Conc[T], i: BigInt, y: T): Conc[T] = {
     require(xs.valid)
@@ -165,52 +221,51 @@ object ConcTrees {
       case Empty() =>
         Single(y)
       case Single(x) =>
-        if (i == 0) 
+        if (i == 0)
           CC(Single(y), xs)
-        else 
+        else
           CC(xs, Single(y))
       case CC(l, r) if i < l.size =>
-        concatNonEmpty(insert(l, i, y), r) 
+        concatNonEmpty(insert(l, i, y), r)._1
       case CC(l, r) =>
-        concatNonEmpty(l, insert(r, i - l.size, y))      
+        concatNonEmpty(l, insert(r, i - l.size, y))._1
     }
-  } ensuring(res => res.valid &&
-      //height of the resulting tree is at most 1 greater than that of the input tree
-      res.level - xs.level <= 1 && res.level >= xs.level && 
-      //note: concat takes O(1) time since the heights of the trees concatenated differ by at most 2
-      // the number of recursive invocations of insert
-      rec <= xs.level
-    )
-   
-    //TODO: why with instrumentation we are not able prove the running time here ?
-    //Does 'leon' correctly handle, tuple inside tuples ?
+  } ensuring (res => res.valid &&
+    // height of the resulting tree is at most 1 greater than that of the input tree
+    res.level - xs.level <= 1 && res.level >= xs.level &&
+    //note: concat takes O(1) time since the heights of the trees concatenated differ by at most 2
+    // the number of recursive invocations of insert
+    rec <= xs.level)
+
+  //TODO: why with instrumentation we are not able prove the running time here ?   
   def split[T](xs: Conc[T], n: BigInt): (Conc[T], Conc[T], BigInt) = {
     require(xs.valid)
     xs match {
       case Empty() =>
         (Empty(), Empty(), 0)
-      case s@Single(x) =>
-        if (n == 0) {          
+      case s @ Single(x) =>
+        if (n == 0) {
           (Empty(), s, 0)
         } else {
-          (s, Empty(), 0)          
-        }  
+          (s, Empty(), 0)
+        }
       case CC(l, r) =>
         if (n < l.size) {
-          val (ll, lr, t) = split(l, n)                    
-          (ll, concat(lr, r), t + 1)
+          val (ll, lr, t) = split(l, n)
+          val (nr, t2) = concat(lr, r)
+          (ll, nr, t + t2 + 1)
         } else if (n > l.size) {
-          val (rl, rr, t) = split(r, n - l.size)                    
-          (concat(l, rl), rr, t + 1)
+          val (rl, rr, t) = split(r, n - l.size)
+          val (nl, t2) = concat(l, rl)
+          (nl, rr, t + t2 + 1)
         } else {
-          (l, r,0) 
-        }           
+          (l, r, 0)
+        }
     }
-  } ensuring(res => res._1.valid && res._2.valid &&        
-      xs.level >= res._1.level && xs.level >= res._2.level &&      
-      // the number of recursive invocations of split
-      res._3 <= xs.level
-    )  
+  } ensuring (res => res._1.valid && res._2.valid &&
+    xs.level >= res._1.level && xs.level >= res._2.level &&
+    res._3 <= xs.level + res._1.level + res._2.level  
+    )
 }
 
 
