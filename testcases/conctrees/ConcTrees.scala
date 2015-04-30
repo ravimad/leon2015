@@ -118,11 +118,11 @@ object ConcTrees {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     // the induction scheme
     (xs match {      
-      case cc @ CC(l, r) =>
-        (if (i < cc.size)
+      case CC(l, r) =>
+        (if (i < l.size)
           lookupCorrectness(l, i)
         else
-          lookupCorrectness(r, i - cc.size)
+          lookupCorrectness(r, i - l.size)
         ) &&
         //additional axioms
         appendIndex(l.toList, r.toList, i)
