@@ -86,7 +86,7 @@ abstract class InstrumentationPhase extends TransformationPhase {
         } else {
           mapExpr(body)
         }
-      }
+      }            
 
       def mapPost(pred: Expr, from: FunDef, to: FunDef) = {
         pred match {
