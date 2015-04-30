@@ -292,7 +292,7 @@ object ConcTrees {
     }
   } ensuring (res => res._1.valid && // tree invariants      
     res._1.level - xs.level <= 1 && res._1.level >= xs.level && // height of the output tree is at most 1 greater than that of the input tree
-    res._2 <= xs.level && // time is linear in the height of the tree
+    res._2 <= 3 * xs.level && // time is linear in the height of the tree
     res._1.toList == insertAtIndex(xs.toList, i, y) && // correctness
     insertAppendAxiomInst(xs, i, y) // instantiation of an axiom 
     )
