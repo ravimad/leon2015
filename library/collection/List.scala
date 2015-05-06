@@ -29,6 +29,7 @@ sealed abstract class List[T] {
     case Nil() => that
     case Cons(x, xs) => Cons(x, xs ++ that)
   }) ensuring { res => 
+    (that != Nil[T] || res == this) && 
     (res.content == this.content ++ that.content) && 
     (res.size == this.size + that.size)
   }

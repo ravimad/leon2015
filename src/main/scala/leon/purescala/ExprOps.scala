@@ -32,7 +32,7 @@ object ExprOps {
    *
    * Usages of views makes the computation lazy. (which is useful for
    * contains-like operations)
-   */
+   */  
   def foldRight[T](f: (Expr, Seq[T]) => T)(e: Expr): T = {
     val rec = foldRight(f) _
 
