@@ -4,60 +4,28 @@ import leon._
 import leon.collection._
 
 object BinaryTree {
-  sealed abstract class Tree
-  case class Node(left: Tree, value: BigInt, right: Tree) extends Tree
+  sealed abstract class Tree {
+    /**
+     * Returns the contents of the tree in preorder
+     */
+    def toList: List[BigInt] = {
+      this match {
+        case Node(l, v, r) =>
+          (l.toList ++ sing(v)) ++ r.toList
+        case _ =>
+          Nil[BigInt]()
+      }
+    } ensuring (res => this == Leaf() || res != Nil[BigInt]())
+  }
+  case class Node(left: Tree, value: BigInt, right: Tree) extends Tree 
   case class Leaf() extends Tree
-
-  //  case class SortedTriple(min: Option[Int], max: Option[Int], sorted: Boolean)
-  //
-  //  def isSortedTriple(tree: Tree): SortedTriple = (tree match {
-  //    case Leaf() => SortedTriple(None(), None(), true)
-  //    case Node(l, v, r) =>
-  //      (isSortedTriple(l), isSortedTriple(r)) match {
-  //        case (SortedTriple(minl, maxl, sortedl), SortedTriple(minr, maxr, sortedr)) =>
-  //          val sorted = sortedl && sortedr && (v > maxl.getOrElse(v - 1)) && (v < minr.getOrElse(v + 1))
-  //          SortedTriple(minl.orElse(Some(v)), maxr.orElse(Some(v)), sorted)
-  //      }
-  //  }) ensuring { res =>
-  //    res match {
-  //      case SortedTriple(Some(min), Some(max), res) => !res || (min <= max)
-  //      case SortedTriple(None(), None(), res) => res
-  //      case _ => false
-  //    }
-  //  }
-  //  def isSorted(tree: Tree): Boolean = isSortedTriple(tree).sorted
-
-  //  def max(t: Tree) = {
-  //    require(t != Leaf())
-  //    t match {
-  //      case Node(_, v, Leaf()) => v
-  //      case Node(_, v, r) => max(r)
-  //    }
-  //  }
-  //  
-  //  def min(t: Tree) = {
-  //    require(t != Leaf())
-  //    t match {
-  //      case Node(Leaf(), v, _) => v
-  //      case Node(l, v, _) => min(l)
-  //    }
-  //  }
-
-  def toList(t: Tree): List[BigInt] = {
-    t match {
-      case Node(l, v, r) =>
-        (toList(l) ++ sing(v)) ++ toList(r)
-      case _ =>
-        Nil[BigInt]()
-    }
-  } ensuring (res => t == Leaf() || res != Nil[BigInt]())
 
   def BST(t: Tree): Boolean = t match {
     case Leaf() => true
     case Node(l, v, r) =>
-      BST(l) && BST(r) && isSorted(toList(t)) &&
-        (toList(l) == Nil[BigInt]() || toList(l).last < v) &&
-        (toList(r) == Nil[BigInt]() || v < first(toList(r)))
+      BST(l) && BST(r) && isSorted(t.toList) &&
+        (l.toList == Nil[BigInt]() || l.toList.last < v) &&
+        (r.toList == Nil[BigInt]() || v < first(r.toList))
   }
 
   def sing(x: BigInt): List[BigInt] = {
@@ -75,7 +43,8 @@ object BinaryTree {
   def insert(tree: Tree, value: BigInt): Tree = ({
     require(BST(tree))
     tree match {
-      case Leaf() => Node(Leaf(), value, Leaf())
+      case Leaf() => 
+        Node(Leaf(), value, Leaf())
       case Node(l, v, r) => if (v < value) {
         Node(l, v, insert(r, value))
       } else if (v > value) {
@@ -86,13 +55,13 @@ object BinaryTree {
     }
   }) ensuring (res => BST(res) &&
     res != Leaf() &&
-    toList(res) != Nil[BigInt]() &&
+    res.toList != Nil[BigInt]() &&
     (tree match {
-      case Leaf() => (first(toList(res)) == value) &&
-        (toList(res).last == value)
+      case Leaf() => (first(res.toList) == value) &&
+        (res.toList.last == value)
       case _ =>
-        first(toList(res)) == min(first(toList(tree)), value) &&
-          toList(res).last == max(toList(tree).last, value)
+        first(res.toList) == min(first(tree.toList), value) &&
+          res.toList.last == max(tree.toList.last, value)
     })
     &&
     instAppendSorted(tree, value))
@@ -103,14 +72,14 @@ object BinaryTree {
       case Leaf() =>
         true
       case Node(l, v, r) =>
-        appendSorted(toList(l), sing(v)) &&
-          appendSorted(toList(l) ++ sing(v), toList(r)) &&
+        appendSorted(l.toList, sing(v)) &&
+          appendSorted(l.toList ++ sing(v), r.toList) &&
           (if (v < value) {
-            appendSorted(toList(l), sing(v)) &&
-              appendSorted(toList(l) ++ sing(v), toList(insert(r, value)))
+            appendSorted(l.toList, sing(v)) &&
+              appendSorted(l.toList ++ sing(v), insert(r, value).toList)
           } else if (v > value) {
-            appendSorted(toList(insert(l, value)), sing(v)) &&
-              appendSorted(toList(insert(l, value)) ++ sing(v), toList(r))
+            appendSorted(insert(l, value).toList, sing(v)) &&
+              appendSorted(insert(l, value).toList ++ sing(v), r.toList)
           } else true)
     }
   }
@@ -146,20 +115,4 @@ object BinaryTree {
       (l2 != Nil[BigInt]() || l1 == Nil[BigInt]() || (l1 ++ l2).last == l1.last) &&
       isSorted(l1 ++ l2)
   }.holds
-
-  //  def buggyMerge(t1: Tree, t2: Tree): Tree = ({
-  //    require(isSorted(t1) && isSorted(t2))
-  //    (t1, t2) match {
-  //      case (Leaf(), _) => t2
-  //      case (_, Leaf()) => t1
-  //      case (t1 @ Node(l1, v1, r1), t2 @ Node(l2, v2, r2)) =>
-  //        if (v1 < v2) {
-  //          Node(buggyMerge(t1, l2), v2, r2)
-  //        } else if (v2 < v1) {
-  //          Node(buggyMerge(l1, t2), v1, r1)
-  //        } else {
-  //          Node(buggyMerge(l1, l2), v1, buggyMerge(r1, r2))
-  //        }
-  //    }
-  //  }) ensuring (res => isSorted(res))
 }
