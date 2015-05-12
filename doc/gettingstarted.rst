@@ -3,61 +3,96 @@
 Getting Started
 ===============
 
-This section gives a very quick overview of how to build and start using Leon;
-refer to the following :ref:`section <installation>` if you wish (or need) more
-detailed information on how to setup Leon on your system.
+Web Interface
+-------------
 
-To build Leon, you will need, the following:
+The simplest way to try out Leon is to use it through the
+web interface http://leon.epfl.ch. The web interface uses
+standard Javascript and should run in most browsers,
+including Chrome and Firefox. 
 
-* Java Runtime Environment, from Oracle, e.g. Version 7 Update 5 (to run sbt and scala)
-* Scala, from Typesafe, e.g. version 2.11.5
-* sbt, at least version 0.13.1 (to build Leon)
-* a recent GLIBC3 or later, works with e.g. ``apt-get`` (for Z3)
-* GNU Multiprecision library, e.g. gmp3, works with e.g. ``apt-get`` (for Z3)
+The web interface requires you to enter your entire program
+into the single web editor buffer. For example, you can
+paste into the editor the definition of the following `max`
+function on unbounded integers:
 
-The following can be obtained from the web, but for convenience they are
-contained in the repository and are actually automatically handled by the
-default build configuration:
+.. code-block:: scala
 
-* ScalaZ3 hosted on `GitHub <https://github.com/psuter/ScalaZ3/>`_
-* The `libz3 library <http://z3.codeplex.com/>`_ from microsoft
+  object Max {
+    def max(x: BigInt, y: BigInt): BigInt = {
+      if (x <= y) y
+      else x
+    } ensuring(res => x <= res && y <= res)
+  }
 
-To build, type this::
+The above program should verify. If you change `y <= res`
+into `y < res`, Leon should report a counterexample; try
+clicking on the names of parameters `x` and `y` as well
+as various parts in the `ensuring` clause.
 
-    $ sbt clean
-    $ sbt package # takes a while
-    $ sbt script
+You can also select from a number of predefined examples,
+and then edit them subsequently.  Selecting a different
+sample program from the web interface will erase the
+previously entered program.
 
-Then you can try e.g::
+The web interface fixes particular settings including the
+timeout values for verification and synthesis tasks. For
+longer tasks we currently recommend using the command line.
 
-    $ ./leon ./testcases/verification/sas2011-testcases/RedBlackTree.scala
+Command Line
+------------
 
-and get something like this::
+Leon can be used as a command line tool, which exposes most
+of the functionality. To see the main options, use 
 
-    ┌──────────────────────┐
-  ╔═╡ Verification Summary ╞═════════════════════════════════════════════════════════════════════╗
-  ║ └──────────────────────┘                                                                     ║
-  ║ add                            postcondition            83:22    valid        Z3-f     0.057 ║
-  ║ add                            precondition             82:5     valid        Z3-f     0.017 ║
-  ║ add                            precondition             82:15    valid        Z3-f     0.003 ║
-  ║ balance                        match exhaustiveness     91:5     valid        Z3-f     0.005 ║
-  ║ balance                        postcondition            102:22   valid        Z3-f     0.055 ║
-  ║ blackBalanced                  match exhaustiveness     46:43    valid        Z3-f     0.003 ║
-  ║ blackHeight                    match exhaustiveness     51:40    valid        Z3-f     0.004 ║
-  ║ buggyAdd                       postcondition            88:22    invalid      Z3-f     1.162 ║
-  ║ buggyAdd                       precondition             87:5     invalid      Z3-f     0.027 ║
-  ║ buggyBalance                   match exhaustiveness     105:5    invalid      Z3-f     0.007 ║
-  ║ buggyBalance                   postcondition            116:22   invalid      Z3-f     0.017 ║
-  ║ content                        match exhaustiveness     18:37    valid        Z3-f     0.034 ║
-  ║ ins                            match exhaustiveness     60:5     valid        Z3-f     0.003 ║
-  ║ ins                            postcondition            67:22    valid        Z3-f     1.753 ║
-  ║ ins                            precondition             63:37    valid        Z3-f     0.011 ║
-  ║ ins                            precondition             65:40    valid        Z3-f     0.012 ║
-  ║ makeBlack                      postcondition            78:21    valid        Z3-f     0.012 ║
-  ║ redDescHaveBlackChildren       match exhaustiveness     41:53    valid        Z3-f     0.003 ║
-  ║ redNodesHaveBlackChildren      match exhaustiveness     35:54    valid        Z3-f     0.004 ║
-  ║ size                           match exhaustiveness     23:33    valid        Z3-f     0.004 ║
-  ║ size                           postcondition            26:15    valid        Z3-f     0.043 ║
-  ╟┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄╢
-  ║ total: 21     valid: 17     invalid: 4      unknown 0                                  3.236 ║
-  ╚══════════════════════════════════════════════════════════════════════════════════════════════╝
+.. code-block:: bash
+
+  ./leon --help
+
+in your command line shell while in the top-level Leon directory.
+
+You can try some of the examples from the `testcases/` directory 
+distributed with Leon:
+
+.. code-block:: bash
+
+    $ ./leon --solvers=smt-cvc4 ./testcases/verification/sas2011-testcases/RedBlackTree.scala
+
+and get something like this
+
+.. code-block:: bash
+
+   ┌──────────────────────┐
+ ╔═╡ Verification Summary ╞═══════════════════════════════════════════════════════════════════╗
+ ║ └──────────────────────┘                                                                   ║
+ ║ add                          postcondition          82:15   valid    U:smt-cvc4      0.258 ║
+ ║ add                          precondition           81:15   valid    U:smt-cvc4      0.007 ║
+ ║ add                          precondition           81:5    valid    U:smt-cvc4      0.049 ║
+ ║ balance                      match exhaustiveness   90:5    valid    U:smt-cvc4      0.006 ║
+ ║ balance                      postcondition          101:15  valid    U:smt-cvc4      0.301 ║
+ ║ blackBalanced                match exhaustiveness   45:43   valid    U:smt-cvc4      0.006 ║
+ ║ blackHeight                  match exhaustiveness   50:40   valid    U:smt-cvc4      0.009 ║
+ ║ buggyAdd                     postcondition          87:15   invalid  U:smt-cvc4      1.561 ║
+ ║ buggyAdd                     precondition           86:5    invalid  U:smt-cvc4      0.135 ║
+ ║ buggyBalance                 match exhaustiveness   104:5   invalid  U:smt-cvc4      0.008 ║
+ ║ buggyBalance                 postcondition          115:15  invalid  U:smt-cvc4      0.211 ║
+ ║ content                      match exhaustiveness   17:37   valid    U:smt-cvc4      0.030 ║
+ ║ ins                          match exhaustiveness   59:5    valid    U:smt-cvc4      0.007 ║
+ ║ ins                          postcondition          66:15   valid    U:smt-cvc4      3.996 ║
+ ║ ins                          precondition           62:37   valid    U:smt-cvc4      0.034 ║
+ ║ ins                          precondition           64:40   valid    U:smt-cvc4      0.036 ║
+ ║ makeBlack                    postcondition          77:14   valid    U:smt-cvc4      0.036 ║
+ ║ redDescHaveBlackChildren     match exhaustiveness   40:53   valid    U:smt-cvc4      0.005 ║
+ ║ redNodesHaveBlackChildren    match exhaustiveness   34:54   valid    U:smt-cvc4      0.007 ║
+ ║ size                         match exhaustiveness   22:33   valid    U:smt-cvc4      0.005 ║
+ ║ size                         postcondition          25:15   valid    U:smt-cvc4      0.055 ║
+ ╟┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄╢
+ ║ total: 21     valid: 17     invalid: 4      unknown 0                                6.762 ║
+ ╚════════════════════════════════════════════════════════════════════════════════════════════╝
+
+
+For more details on how to build Leon from sources that can
+be used directly from the shell, see
+:ref:`installation`.  In addition to invoking `./leon --help` you
+may wish to consult :ref:`cmdlineoptions` options.
+

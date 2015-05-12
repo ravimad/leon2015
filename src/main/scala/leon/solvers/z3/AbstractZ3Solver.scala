@@ -413,6 +413,7 @@ trait AbstractZ3Solver
         declareADTSort(act)
       }
 
+
     case cct: CaseClassType =>
       sorts.toZ3OrCompute(cct) {
         declareADTSort(cct)
@@ -514,9 +515,6 @@ trait AbstractZ3Solver
 
       case me @ MatchExpr(s, cs) =>
         rec(matchToIfThenElse(me))
-      
-      case g @ Gives(scrut, tests) =>
-        rec(g.asMatch)
 
       case tu @ Tuple(args) =>
         typeToSort(tu.getType) // Make sure we generate sort & meta info
@@ -563,6 +561,7 @@ trait AbstractZ3Solver
       case Not(e) => z3.mkNot(rec(e))
       case IntLiteral(v) => z3.mkInt(v, typeToSort(Int32Type))
       case InfiniteIntegerLiteral(v) => z3.mkNumeral(v.toString, typeToSort(IntegerType))
+      case CharLiteral(c) => z3.mkInt(c, typeToSort(Int32Type))
       case BooleanLiteral(v) => if (v) z3.mkTrue() else z3.mkFalse()
       case UnitLiteral() => unitValue
       case Equals(l, r) => z3.mkEq(rec( l ), rec( r ) )

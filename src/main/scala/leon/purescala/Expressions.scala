@@ -14,15 +14,13 @@ import Constructors._
 object Expressions {
 
   /* EXPRESSIONS */
-  abstract class Expr extends Tree with Typed with Serializable {
-    override val getType: TypeTree
-  }
+  abstract class Expr extends Tree with Typed
 
   trait Terminal {
     self: Expr =>
   }
 
-  case class NoTree(tpe: TypeTree) extends Expr with Terminal with Typed {
+  case class NoTree(tpe: TypeTree) extends Expr with Terminal {
     val getType = tpe
   }
 
@@ -33,7 +31,7 @@ object Expressions {
     val getType = tpe
   }
 
-  case class Require(pred: Expr, body: Expr) extends Expr with Typed {
+  case class Require(pred: Expr, body: Expr) extends Expr {
     val getType = body.getType
   }
 
@@ -157,26 +155,10 @@ object Expressions {
     }
   }
 
-  abstract sealed class MatchLike extends Expr {
-    val scrutinee : Expr
-    val cases : Seq[MatchCase]  
+  case class MatchExpr(scrutinee: Expr, cases: Seq[MatchCase]) extends Expr {
+    require(cases.nonEmpty)
     val getType = leastUpperBound(cases.map(_.rhs.getType)).getOrElse(Untyped).unveilUntyped
   }
-
-  case class MatchExpr(scrutinee: Expr, cases: Seq[MatchCase]) extends MatchLike {
-    require(cases.nonEmpty)
-  }
-  
-  case class Gives(scrutinee: Expr, cases : Seq[MatchCase]) extends MatchLike {
-    def asMatchWithHole = {
-      val theHole = SimpleCase(WildcardPattern(None), Hole(this.getType, Seq()))
-      MatchExpr(scrutinee, cases :+ theHole)
-    }
-
-    def asMatch = {
-      matchExpr(scrutinee, cases)
-    }
-  } 
   
   case class Passes(in: Expr, out : Expr, cases : Seq[MatchCase]) extends Expr {
     require(cases.nonEmpty)
@@ -460,7 +442,7 @@ object Expressions {
   
   case class MapGet(map: Expr, key: Expr) extends Expr {
     val getType = map.getType match {
-      case MapType(from, to) => to
+      case MapType(_, to) => to
       case _ => Untyped
     }
   }

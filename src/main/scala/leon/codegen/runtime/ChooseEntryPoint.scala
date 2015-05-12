@@ -4,18 +4,15 @@ package leon
 package codegen.runtime
 
 import utils._
-import purescala.Common._
-import purescala.Definitions._
-import purescala.Expressions.{Tuple => LeonTuple, _}
+import purescala.Expressions._
 import purescala.ExprOps.valuateWithModel
-import purescala.Types._
 import purescala.Constructors._
-import solvers.TimeoutSolver
-import solvers.z3._
+import solvers.SolverFactory
 
 import java.util.WeakHashMap
 import java.lang.ref.WeakReference
 import scala.collection.mutable.{HashMap => MutableMap}
+import scala.concurrent.duration._
 
 import codegen.CompilationUnit
 
@@ -82,7 +79,7 @@ object ChooseEntryPoint {
     } else {
       val tStart = System.currentTimeMillis
 
-      val solver = (new FairZ3Solver(ctx, program) with TimeoutSolver).setTimeout(10000L)
+      val solver = SolverFactory.default(ctx, program).withTimeout(10.second).getNewSolver()
 
       val inputsMap = (p.as zip inputs).map {
         case (id, v) =>

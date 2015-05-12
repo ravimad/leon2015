@@ -4,7 +4,7 @@ package leon
 
 import utils._
 
-abstract class Reporter(settings: Settings) {
+abstract class Reporter(val debugSections: Set[DebugSection]) {
 
   abstract class Severity
   case object INFO    extends Severity
@@ -67,16 +67,20 @@ abstract class Reporter(settings: Settings) {
   }
 
   // Debugging
-  private val debugMask = settings.debugSections.foldLeft(0){ _ | _.mask }
+  private val debugMask = debugSections.foldLeft(0){ _ | _.mask }
+
+  def isDebugEnabled(implicit section: DebugSection): Boolean = {
+    (debugMask & section.mask) == section.mask
+  }
 
   def ifDebug(body: (Any => Unit) => Any)(implicit section: DebugSection) = {
-    if ((debugMask & section.mask) == section.mask) {
+    if (isDebugEnabled) {
       body( { (msg: Any) => emit(account(Message(DEBUG(section), NoPosition, msg))) } )
     }
   }
 
   def whenDebug(section: DebugSection)(body: (Any => Unit) => Any) {
-    if ((debugMask & section.mask) == section.mask) {
+    if (isDebugEnabled(section)) {
       body( { (msg: Any) => emit(account(Message(DEBUG(section), NoPosition, msg))) } )
     }
   }
@@ -99,7 +103,7 @@ abstract class Reporter(settings: Settings) {
   final def debug(msg: => Any)(implicit section: DebugSection): Unit = debug(NoPosition, msg)
 }
 
-class DefaultReporter(settings: Settings) extends Reporter(settings) {
+class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSections) {
   protected def severityToPrefix(sev: Severity): String = sev match {
     case ERROR    => "["+Console.RED              +" Error  "+Console.RESET+"]"
     case WARNING  => "["+Console.YELLOW           +"Warning "+Console.RESET+"]"
@@ -171,12 +175,12 @@ class DefaultReporter(settings: Settings) extends Reporter(settings) {
   }
 
   protected def reline(pfx: String, msg: String) : String = {
-    pfx+" "+msg.replaceAll("\n", "\n" + (" " * prefixSize))
+    pfx+" "+msg.replaceAll("\n", s"\n$pfx ")
   }
 
 }
 
-class PlainTextReporter(settings: Settings) extends DefaultReporter(settings) {
+class PlainTextReporter(debugSections: Set[DebugSection]) extends DefaultReporter(debugSections) {
   override protected def severityToPrefix(sev: Severity): String = sev match {
     case ERROR    => "[ Error  ]"
     case WARNING  => "[Warning ]"

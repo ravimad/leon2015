@@ -196,6 +196,9 @@ class CompilationUnit(val ctx: LeonContext,
     case (b: java.lang.Boolean, BooleanType) =>
       BooleanLiteral(b.booleanValue)
 
+    case (c: java.lang.Character, CharType) =>
+      CharLiteral(c.toChar)
+
     case (cc: runtime.CaseClass, ct: ClassType) =>
       val fields = cc.productElements()
 
@@ -236,6 +239,9 @@ class CompilationUnit(val ctx: LeonContext,
         (k, v)
       }
       finiteMap(pairs.toSeq, from, to)
+
+    case (_, UnitType) =>
+      UnitLiteral()
 
     case _ =>
       throw CompilationException("Unsupported return value : " + e.getClass +" while expecting "+tpe)

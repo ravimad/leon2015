@@ -1,6 +1,9 @@
 import leon.lang._
 import leon.annotation._
+<<<<<<< HEAD
 import leon._
+=======
+>>>>>>> b0373d91906a5659e4e78ecec922a155d36db750
 import leon.collection._
 
 object BinaryTree {

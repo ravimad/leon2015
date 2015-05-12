@@ -148,8 +148,16 @@ class PrettyPrinter(opts: PrinterOptions, val sb: StringBuffer = new StringBuffe
     
   }
   
-  def pp(tree: Tree)(implicit ctx: PrinterContext): Unit = tree match {
-    
+  def pp(tree: Tree)(implicit ctx: PrinterContext): Unit = {
+    if (opts.printTypes) {
+      tree match {
+        case t: Expr =>
+          p"⟨"
+
+        case _ =>
+      }
+    }
+    tree match {
       case id: Identifier =>
         
         val name = if (opts.printUniqueIds) {
@@ -206,13 +214,6 @@ class PrettyPrinter(opts: PrinterOptions, val sb: StringBuffer = new StringBuffe
             |  $post
             |}"""
 
-      case Gives(s, tests) => 
-        optP {
-          p"""|$s gives {
-              |  ${nary(tests, "\n")}
-              |}"""
-        }
-      
       case p@Passes(in, out, tests) =>
         optP {
           p"""|($in, $out) passes {
@@ -235,18 +236,18 @@ class PrettyPrinter(opts: PrinterOptions, val sb: StringBuffer = new StringBuffe
         isListLiteral(e) match {
           case Some((tpe, elems)) =>
             val chars = elems.collect{case CharLiteral(ch) => ch}
-            if (chars.length == elems.length) {
+            if (chars.length == elems.length && tpe == CharType) {
               // String literal
               val str = chars mkString ""
               val q = '"'
               p"$q$str$q"
-            }
-            
-            val elemTps = leastUpperBound(elems.map(_.getType))
-            if (elemTps == Some(tpe)) {
-              p"List($elems)"  
             } else {
-              p"List[$tpe]($elems)"  
+              val elemTps = leastUpperBound(elems.map(_.getType))
+              if (elemTps == Some(tpe)) {
+                p"List($elems)"  
+              } else {
+                p"List[$tpe]($elems)"  
+              }
             }
 
             case None =>
@@ -268,7 +269,7 @@ class PrettyPrinter(opts: PrinterOptions, val sb: StringBuffer = new StringBuffe
       case BVUMinus(expr)       => p"-$expr"
       case Equals(l,r)          => optP { p"$l == $r" }
       case IntLiteral(v)        => p"$v"
-      case InfiniteIntegerLiteral(v)        => p"BigInt($v)"
+      case InfiniteIntegerLiteral(v)        => p"$v"
       case CharLiteral(v)       => p"$v"
       case BooleanLiteral(v)    => p"$v"
       case UnitLiteral()        => p"()"
@@ -664,7 +665,15 @@ class PrettyPrinter(opts: PrinterOptions, val sb: StringBuffer = new StringBuffe
       case (tree: PrettyPrintable) => tree.printWith(ctx)
 
       case _ => sb.append("Tree? (" + tree.getClass + ")")
-    
+    }
+    if (opts.printTypes) {
+      tree match {
+        case t: Expr=>
+          p" : ${t.getType} ⟩"
+
+        case _ =>
+      }
+    }
   }
 
   object FcallMethodInvocation {
@@ -749,7 +758,7 @@ class PrettyPrinter(opts: PrinterOptions, val sb: StringBuffer = new StringBuffe
     case (BinaryMethodCall(_, _, _), Some(_: FunctionInvocation)) => true
     case (_, Some(_: FunctionInvocation)) => false
     case (ie: IfExpr, _) => true
-    case (me: MatchLike, _ ) => true
+    case (me: MatchExpr, _ ) => true
     case (e1: Expr, Some(e2: Expr)) if precedence(e1) > precedence(e2) => false
     case (_, _) => true
   }

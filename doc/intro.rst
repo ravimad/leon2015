@@ -66,6 +66,110 @@ sections :ref:`Pure Scala <purescala>` and :ref:`XLang <xlang>`.
 Program Synthesis
 -----------------
 
+As seen with verification, specifications provide an alternative and more
+descriptive way of caracterizing the behavior of a function. 
+Leon defines ways to use specifications instead of an actual implementation
+within your programs:
+
+* a ``choose`` construct that describes explicitly a value with a
+  specification. For instance, one could synthesize a function inserting into a
+  sorted list by:
+
+.. code-block:: scala
+
+  def insert1(in: List, v: BigInt) = {
+    require(isSorted(in1))
+    choose { (out: List) =>
+      (content(out) == content(in1) ++ Set(v)) && isSorted(out)
+    }
+  }
+
+* a hole (``???``) that can be placed anywhere in a specified function. Leon
+  will fill it with values such that the overall specification is satisfied.
+  This construct is especially useful when only a small part of the function
+  is missing.
+
+.. code-block:: scala
+
+  def insert2(in: List, v: BigInt) = {
+    require(isSorted(in1))
+    in match {
+      case Cons(h, t) =>
+        if (h < v) {
+          Cons(h, in)
+        } else if (h == v) {
+          in
+        } else {
+           ???[List]
+        }
+      case Nil =>
+        Nil
+    }
+  } ensuring { out =>
+    (content(out) == content(in1) ++ Set(v)) && isSorted(out)
+  }
+
+
+Given such programs, Leon can:
+
+ 1) Execute them: when the evaluator encounters a ``choose`` construct, it
+ solves the constraint at runtime by invoking an SMT solver. This allows some
+ form of constraint solving programming.
+
+ 2) Attempt to translate specifications to a traditional implementation by
+ applying program synthesis. In our case, Leon will automatically synthesize
+ the hole in ``insert2`` with ``Cons(h, insert2(v, t))``. This automated
+ translation is described in further details in the section on :ref:`synthesis
+ <Synthesis>`.
+
+
 
 Program Repair
 --------------
+
+Leon can repair buggy :ref:`Pure Scala <purescala>` programs.
+Given a specification and an erroneous implementation, Leon will
+localize the cause of the bug and provide an alternative solution.
+An example:
+
+.. code-block:: scala
+
+   def moddiv(a: Int, b: Int): (Int, Int) = {
+     require(a >= 0 && b > 0);
+     if (b > a) {
+       (1, 0) // fixme: should be (a, 0)
+     } else {
+       val (r1, r2) = moddiv(a-b, b)
+       (r1, r2+1)
+     }
+   } ensuring {
+     res =>  b*res._2 + res._1 == a
+   }
+
+Invoking ``leon --repair --functions=moddiv`` will yield: ::
+
+  ...
+  [  Info  ] Found trusted solution!
+  [  Info  ] ============================== Repair successful: ==============================
+  [  Info  ] --------------------------------- Solution 1: ---------------------------------
+  [  Info  ] (a, 0)
+  [  Info  ] ================================= In context: =================================
+  [  Info  ] --------------------------------- Solution 1: ---------------------------------
+  [  Info  ] def moddiv(a : Int, b : Int): (Int, Int) = {
+               require(a >= 0 && b > 0)
+               if (b > a) {
+                 (a, 0)
+               } else {
+                 val (r1, r2) = moddiv(a - b, b)
+                 (r1, (r2 + 1))
+               }
+             } ensuring {
+               (res : (Int, Int)) => (b * res._2 + res._1 == a)
+             }
+
+Repair assumes a small number of localized errors.
+It first invokes a test-based fault localization algorithm,
+and then a special synthesis procedure, which is partially guided
+by the original erroneous implementation. For more information,
+see the section on :ref:`Repair <repair>`.
+

@@ -24,6 +24,7 @@ last.log
 *.last
 *.table
 *.log
+vcs/
 
 #eclipse
 .cache
@@ -31,7 +32,12 @@ last.log
 .project
 .settings/
 .worksheet/
-testingSheet.sc
+
+#intellij
+.idea
+Leon.eml
+Leon.iml
+bin
 
 #z3
 .z3-trace

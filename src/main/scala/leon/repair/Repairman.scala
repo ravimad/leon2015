@@ -25,6 +25,8 @@ import rules._
 import graph.DotGenerator
 import leon.utils.ASCIIHelpers.title
 
+import scala.concurrent.duration._
+
 class Repairman(ctx: LeonContext, initProgram: Program, fd: FunDef, verifTimeoutMs: Option[Long], repairTimeoutMs: Option[Long]) {
   val reporter = ctx.reporter
 
@@ -370,9 +372,9 @@ class Repairman(ctx: LeonContext, initProgram: Program, fd: FunDef, verifTimeout
 
   private def getVerificationCounterExamples(fd: FunDef, prog: Program): VerificationResult = {
     val timeoutMs = verifTimeoutMs.getOrElse(3000L)
-    val solver = new TimeoutSolverFactory(SolverFactory.getFromSettings(ctx, prog), timeoutMs)
+    val solver = SolverFactory.getFromSettings(ctx, prog).withTimeout(timeoutMs)
     val vctx = VerificationContext(ctx, prog, solver, reporter)
-    val vcs = AnalysisPhase.generateVCs(vctx, Some(List(fd.id.name)))
+    val vcs = AnalysisPhase.generateVCs(vctx, Some(Seq(fd.id.name)))
 
     val report = AnalysisPhase.checkVCs(
       vctx, 
@@ -469,7 +471,7 @@ class Repairman(ctx: LeonContext, initProgram: Program, fd: FunDef, verifTimeout
       None
     } else {
       val diff = and(p.pc, not(Equals(s1, s2)))
-      val solver = (new FairZ3Solver(ctx, program) with TimeoutSolver).setTimeout(1000)
+      val solver = SolverFactory.default(ctx, program).withTimeout(1.second).getNewSolver()
 
       solver.assertCnstr(diff)
       solver.check match {

@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Leon's documentation!
-================================
+Leon documentation
+==================
 
 Contents:
 
@@ -13,13 +13,17 @@ Contents:
 
    intro
    gettingstarted
-   tutorial
    installation
+   tutorial
    purescala
+   library
    xlang
    verification
+   limitations
    synthesis
    repair
+   options
+   faq
    references
 
 
@@ -27,5 +31,5 @@ Indices and tables
 ==================
 
 * :ref:`genindex`
-* :ref:`modindex`
 * :ref:`search`
+

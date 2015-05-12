@@ -34,7 +34,7 @@ class DefaultTactic(vctx: VerificationContext) extends Tactic(vctx) {
               val pre2 = replaceFromIDs((tfd.params.map(_.id) zip args).toMap, pre)
               val vc = implies(and(precOrTrue(fd), path), pre2)
 
-              VC(vc, fd, VCKinds.Precondition, this).setPos(fi)
+              VC(vc, fd, VCKinds.Info(VCKinds.Precondition, s"call $fi"), this).setPos(fi)
           }
 
         case None =>
@@ -49,6 +49,7 @@ class DefaultTactic(vctx: VerificationContext) extends Tactic(vctx) {
             case e @ Error(_, "Match is non-exhaustive") =>
               (e, VCKinds.ExhaustiveMatch, BooleanLiteral(false))
 
+
             case e @ Error(_, _) =>
               (e, VCKinds.Assert, BooleanLiteral(false))
 
@@ -57,6 +58,8 @@ class DefaultTactic(vctx: VerificationContext) extends Tactic(vctx) {
                 VCKinds.MapUsage
               } else if (err.startsWith("Array ")) {
                 VCKinds.ArrayUsage
+              } else if (err.startsWith("Division ")) {
+                VCKinds.DivisionByZero
               } else {
                 VCKinds.Assert
               }

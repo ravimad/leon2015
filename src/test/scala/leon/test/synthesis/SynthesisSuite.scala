@@ -81,13 +81,9 @@ class SynthesisSuite extends LeonTestSuite {
 
   }
 
-  def forProgram(title: String, opts: SynthesisSettings = SynthesisSettings())(content: String)(strats: PartialFunction[String, SynStrat]) {
+  def forProgram(title: String, opts: Seq[LeonOption[Any]] = Nil)(content: String)(strats: PartialFunction[String, SynStrat]) {
       test(f"Synthesizing ${nextInt()}%3d: [$title]") {
-        val ctx = testContext.copy(settings = Settings(
-            synthesis = true,
-            xlang     = false,
-            verify    = false
-          ))
+        val ctx = testContext.copy(options = opts ++ testContext.options)
 
         val pipeline = leon.utils.TemporaryInputPhase andThen leon.frontends.scalac.ExtractionPhase andThen PreprocessingPhase andThen SynthesisProblemExtractionPhase
 
@@ -96,12 +92,10 @@ class SynthesisSuite extends LeonTestSuite {
         for ((f,cis) <- results; ci <- cis) {
           info(f"${ci.fd.id.toString}%-20s")
 
-
           val sctx = SynthesisContext(ctx,
-                                      opts,
+                                      SynthesisSettings(),
                                       ci.fd,
-                                      program,
-                                      ctx.reporter)
+                                      program)
 
           val p      = ci.problem
 
@@ -118,7 +112,7 @@ class SynthesisSuite extends LeonTestSuite {
       }
   }
 
-  forProgram("Ground Enum", SynthesisSettings(selectedSolvers = Set("enum")))(
+  forProgram("Ground Enum", Seq(LeonOption(SharedOptions.optSelectedSolvers)(Set("enum"))))(
     """
 import leon.annotation._
 import leon.lang._

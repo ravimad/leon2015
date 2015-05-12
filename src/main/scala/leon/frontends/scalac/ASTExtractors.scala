@@ -170,28 +170,6 @@ trait ASTExtractors {
         case _ => None
       }
     }
-
-    object ExGives { 
-      def unapply(tree : Apply) : Option[(Tree, List[CaseDef])] = tree match {
-        case Apply(
-          TypeApply(
-            Select(
-              Apply(
-                TypeApply(
-                  ExSelected("leon", "lang", "package", "Gives"),
-                  _ :: Nil
-                ), 
-                body :: Nil
-              ), 
-              ExNamed("gives")
-            ),
-            _ :: Nil
-          ),
-          (Function((_ @ ValDef(_, _, _, EmptyTree)) :: Nil, ExpressionExtractors.ExPatternMatching(_,tests))) :: Nil)
-          => Some((body, tests))
-        case _ => None
-      }
-    }
  
     object ExPasses { 
       def unapply(tree : Apply) : Option[(Tree, Tree, List[CaseDef])] = tree match {
@@ -858,6 +836,26 @@ trait ASTExtractors {
           Some((fromTypeTree, toTypeTree))
         case _ =>
           None
+      }
+    }
+
+    object ExFiniteSet {
+      def unapply(tree: Apply): Option[(Tree,List[Tree])] = tree match {
+        case Apply(TypeApply(ExSelected("Set", "apply"), Seq(tpt)), args) =>
+          Some(tpt, args)
+        case Apply(TypeApply(ExSelected("leon", "lang", "Set", "apply"), Seq(tpt)), args) =>
+          Some(tpt, args)
+        case _ => None
+      }
+    }
+
+    object ExFiniteMap {
+      def unapply(tree: Apply): Option[(Tree, Tree, List[Tree])] = tree match {
+        case Apply(TypeApply(ExSelected("Map", "apply"), Seq(tptFrom, tptTo)), args) =>
+          Some((tptFrom, tptTo, args))
+        case Apply(TypeApply(ExSelected("leon", "lang", "Map", "apply"), Seq(tptFrom, tptTo)), args) =>
+          Some((tptFrom, tptTo, args))
+        case _ => None
       }
     }
 

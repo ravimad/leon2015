@@ -1,29 +1,37 @@
 .. _purescala:
 
 Pure Scala
-=============================
+==========
 
+The input to Leon is a purely functional **subset** of Scala
+(http://www.scala-lang.org/), which we call 
+**Pure Scala**. Constructs specific for Leon are defined inside
+Leon's libraries in package `leon` and its subpackages. Leon
+invokes standard `scalac` compiler on the input file, then
+performs additional checks to ensure that the given program
+belongs to Pure Scala.
 
-Leon supports two kinds of top-level declarations:
+Pure Scala supports two kinds of top-level declarations:
 
-1. ADT definitions in the form of an abstract class and case classes/objects
+1. Algebraic Data Type (ADT) definitions in the form of an
+   abstract class and case classes/objects
 
 .. code-block:: scala
 
-   abstract class Foo
-   case class Bar(a: Int) extends Foo
-   case object Gee extends Foo
+   abstract class MyList
+   case object MyEmpty extends MyList
+   case class MyCons(elem: BigInt, rest: MyList) extends MyList
 
 2. Objects/modules, for grouping classes and functions
 
 .. code-block:: scala
 
    object Specs {
-      def foo(a: Int) = {
+      def increment(a: BigInt): BigInt = {
          a + 1
       }
 
-      case class Foo(a: Int)
+      case class Identifier(id: BigInt)
    }
 
 
@@ -252,6 +260,8 @@ Set
 
 .. code-block:: scala
 
+ import leon.lang.Set // Required to have support for Sets
+
  val s1 = Set(1,2,3,1)
  val s2 = Set[Int]()
 
@@ -279,6 +289,8 @@ Map
 
 .. code-block:: scala
 
+ import leon.lang.Map // Required to have support for Maps
+
  val  m = Map[Int, Boolean](42 -> false)
 
  m(index)
@@ -286,3 +298,83 @@ Map
  m contains index
  m.updated(index, value)
 
+
+Function
+########
+
+.. code-block:: scala
+
+ val f1 = (x: Int) => x + 1                 // simple anonymous function
+
+ val y  = 2
+ val f2 = (x: Int) => f1(x) + y             // closes over `f1` and `y`
+ val f3 = (x: Int) => if (x < 0) f1 else f2 // anonymous function returning another function
+
+ list.map(f1)      // functions can be passed around ...
+ list.map(f3(1) _) // ... and partially applied
+
+.. note::
+ No operators are defined on function-typed expressions, so specification is
+ currently quite limited.
+
+
+Symbolic Input-Output examples
+------------------------------
+
+Sometimes, a complete formal specification is hard to write,
+especially when it comes to simple, elementary functions. In such cases,
+it may be easier to provide a set of IO-examples. On the other hand,
+IO-examples can never cover all the possible executions of a function,
+and are thus weaker than a formal specification. 
+
+Leon provides a powerful compromise between these two extremes.
+It introduces *symbolic IO-examples*, expressed through a specialized ``passes``
+construct, which resembles pattern-matching:
+
+.. code-block:: scala
+
+  sealed abstract class List {
+    
+    def size: Int = (this match {
+      case Nil() => 0
+      case Cons(h, t) => 1 + t.size
+    }) ensuring { res => (this, res) passes {
+      case Nil() => 0
+      case Cons(_, Nil()) => 1
+      case Cons(_, Cons(_, Nil())) => 2
+    }}
+  }
+  case class Cons[T](h: T, t: List[T]) extends List[T]
+  case class Nil[T]() extends List[T]
+
+
+In the above example, the programmer has chosen to partially specify ``size``
+through a list of IO-examples, describing what the function should do 
+for lists of size 0, 1 or 2.
+Notice that the examples are symbolic, in that the elements of the lists are
+left unconstrained.
+
+The semantics of ``passes`` is the following.
+Let ``a: A`` be a tuple of method parameters and/or ``this``, ``b: B``,
+and for each i ``pi: A`` and ``ei: B``. Then
+
+.. code-block:: scala
+
+  (a, b) passes {
+    case p1 => e1
+    case p2 => e2
+    ...
+    case pN => eN
+  }
+
+is equivalent to
+
+.. code-block:: scala
+
+  a match {
+    case p1 => b == e1
+    case p2 => b == e2
+    ...
+    case pN => b == eN
+    case _  => true
+  }
