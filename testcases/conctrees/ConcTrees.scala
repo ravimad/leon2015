@@ -2,10 +2,9 @@ import leon.instrumentation._
 import leon.collection._
 import leon.lang._
 import ListSpecs._
+import leon.annotation._
 
 object ConcTrees {
-
-  import ListOperationsAndProperties._
 
   def max(x: BigInt, y: BigInt): BigInt = if (x >= y) x else y
   def abs(x: BigInt): BigInt = if (x < 0) -x else x
@@ -125,6 +124,7 @@ object ConcTrees {
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
 
+  @library
   def lookup[T](xs: Conc[T], i: BigInt): (T, BigInt) = {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
@@ -161,6 +161,7 @@ object ConcTrees {
     }
   }.holds
 
+  @library
   def update[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
@@ -185,7 +186,7 @@ object ConcTrees {
   } ensuring (res => res._1.level == xs.level && // heights of the input and output trees are equal
     res._1.valid && // tree invariants are preserved
     res._2 <= xs.level && // update time is linear in the height of the tree
-    res._1.toList == updated(xs.toList, i, y) && // correctness
+    res._1.toList == xs.toList.updated(i, y) && // correctness
     instAppendUpdateAxiom(xs, i, y)) // an auxiliary axiom instantiation
 
   def instAppendUpdateAxiom[T](xs: Conc[T], i: BigInt, y: T): Boolean = {
@@ -236,6 +237,7 @@ object ConcTrees {
    * This concat applies only to normalized trees.
    * This prevents concat from being recursive
    */
+  @library
   def concatNormalized[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized)
@@ -249,10 +251,10 @@ object ConcTrees {
     res._1.level <= max(xs.level, ys.level) + 1 && // height invariants
     res._1.level >= max(xs.level, ys.level) &&
     (res._1.toList == xs.toList ++ ys.toList) && // correctness
-    res._1.isNormalized && //auxiliary properties
-    appendEmpty(xs.toList, ys.toList) // an auxiliary lemma     
+    res._1.isNormalized //auxiliary properties    
     )
 
+    @library
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized &&
@@ -341,6 +343,7 @@ object ConcTrees {
       })
   }.holds
 
+  @library
   def insert[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && i >= 0 && i <= xs.size &&
       xs.isNormalized) //note the precondition
@@ -363,7 +366,7 @@ object ConcTrees {
   } ensuring (res => res._1.valid && res._1.isNormalized && // tree invariants            
     res._1.level - xs.level <= 1 && res._1.level >= xs.level && // height of the output tree is at most 1 greater than that of the input tree
     res._2 <= 3 * xs.level && // time is linear in the height of the tree
-    res._1.toList == insertAtIndex(xs.toList, i, y) && // correctness
+    res._1.toList == xs.toList.insertAtIndex(i, y) && // correctness
     insertAppendAxiomInst(xs, i, y) // instantiation of an axiom 
     )
 
@@ -375,7 +378,8 @@ object ConcTrees {
     }
   }.holds
 
-  //TODO: why with instrumentation we are not able prove the running time here ?   
+  //TODO: why with instrumentation we are not able prove the running time here ?
+  @library
   def split[T](xs: Conc[T], n: BigInt): (Conc[T], Conc[T], BigInt) = {
     require(xs.valid && xs.isNormalized)
     xs match {
@@ -416,114 +420,38 @@ object ConcTrees {
     }
   }.holds
 
-  /*def appendTop[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
-    require(ys.isLeaf)
+  def appendTop[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
+    require(xs.valid && ys.isLeaf && !ys.isEmpty)
     xs match {
-      case Append() => append(xs, ys)
-      case _ <> _ => new Append(xs, ys)
-      case Empty => ys
-      case xs: Leaf[T] => new <>(xs, ys)
+      case xs@Append(_, _) => 
+        append(xs, ys)
+      case CC(_,_) => 
+        Append(xs, ys) //creating an append node
+      case Empty() => 
+        ys
+      case Single(_) => 
+        CC(xs, ys)
     }
-  }
+  } ensuring(res => res.valid)
 
-  @tailrec private def append[T](xs: Append[T], ys: Conc[T]): Conc[T] = {
-    if (xs.right.level > ys.level) new Append(xs, ys)
+  def append[T](xs: Append[T], ys: Conc[T]): Conc[T] = {
+    require(xs.valid && ys.valid 
+        && !ys.isEmpty && ys.isNormalized &&        
+        xs.right.level >= ys.level)
+    
+    if (xs.right.level > ys.level) 
+      Append(xs, ys)
     else {
-      val zs = new <>(xs.right, ys)
+      val zs = CC(xs.right, ys)
       xs.left match {
-        case ws @ Append(_, _) => append(ws, zs)
-        case ws if ws.level <= zs.level => ws <> zs
-        case ws => new Append(ws, zs)
+        case ws @ Append(_, _) => 
+          append(ws, zs)
+        case ws if ws.level <= zs.level => //note: here strict <= is not possible 
+          concatNonEmpty(ws, zs)._1
+          //CC(ws, zs)
+        case ws => 
+          Append(ws, zs)
       }
     }
-  }*/
-}
-
-object ListOperationsAndProperties {
-
-  /**
-   * A procedure that updates a list at a given index.
-   * This will be added to the standard list library
-   */
-  def updated[T](l: List[T], i: BigInt, y: T): List[T] = {
-    require(0 <= i && i < l.size)
-    l match {
-      case Cons(x, tail) if i == 0 =>
-        Cons[T](y, tail)
-      case Cons(x, tail) =>
-        Cons[T](x, updated(tail, i - 1, y))
-    }
-  }
-
-  /**
-   * A procedure that inserts into a list at a given index.
-   * This will be added to the standard list library
-   */
-  def insertAtIndex[T](l: List[T], i: BigInt, y: T): List[T] = {
-    require(0 <= i && i <= l.size)
-    l match {
-      case Nil() => Cons[T](y, Nil())
-      case _ if i == 0 => Cons[T](y, l)
-      case Cons(x, tail) =>
-        Cons[T](x, insertAtIndex(tail, i - 1, y))
-    }
-  }
-
-  // A lemma about `append` and `updated`
-  def appendUpdate[T](l1: List[T], l2: List[T], i: BigInt, y: T): Boolean = {
-    require(0 <= i && i < l1.size + l2.size)
-    // induction scheme
-    (l1 match {
-      case Nil() => true
-      case Cons(x, xs) => if (i == 0) true else appendUpdate[T](xs, l2, i - 1, y)
-    }) &&
-      // lemma
-      (updated(l1 ++ l2, i, y) == (
-        if (i < l1.size)
-          updated(l1, i, y) ++ l2
-        else
-          l1 ++ updated(l2, (i - l1.size), y)))
-  }.holds
-
-  // A lemma about list `append`
-  def appendEmpty[T](l1: List[T], l2: List[T]): Boolean = {
-    // induction scheme
-    (l1 match {
-      case Nil() => true
-      case Cons(x, xs) => appendEmpty(xs, l2)
-    }) &&
-      // lemma
-      (l2 != Nil[T]() || l1 ++ l2 == l1) // the property
-  }.holds
-
-  // a lemma about `append`, `take` and `drop`
-  def appendTakeDrop[T](l1: List[T], l2: List[T], n: BigInt): Boolean = {
-    //induction scheme
-    (l1 match {
-      case Nil() => true
-      case Cons(x, xs) => if (n <= 0) true else appendTakeDrop[T](xs, l2, n - 1)
-    }) &&
-      // lemma
-      ((l1 ++ l2).take(n) == (
-        if (n < l1.size) l1.take(n)
-        else if (n > l1.size) l1 ++ l2.take(n - l1.size)
-        else l1)) &&
-        ((l1 ++ l2).drop(n) == (
-          if (n < l1.size) l1.drop(n) ++ l2
-          else if (n > l1.size) l2.drop(n - l1.size)
-          else l2))
-  }.holds
-
-  // A lemma about `append` and `insertAtIndex`
-  def appendInsert[T](l1: List[T], l2: List[T], i: BigInt, y: T): Boolean = {
-    require(0 <= i && i <= l1.size + l2.size)
-    (l1 match {
-      case Nil() => true
-      case Cons(x, xs) => if (i == 0) true else appendInsert[T](xs, l2, i - 1, y)
-    }) &&
-      // lemma
-      (insertAtIndex(l1 ++ l2, i, y) == (
-        if (i < l1.size) insertAtIndex(l1, i, y) ++ l2
-        else l1 ++ insertAtIndex(l2, (i - l1.size), y)))
-  }.holds
+  } ensuring(res => res.valid)
 }
