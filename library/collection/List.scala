@@ -32,7 +32,8 @@ sealed abstract class List[T] {
 
   }) ensuring { res =>
     (res.content == this.content ++ that.content) &&
-      (res.size == this.size + that.size)
+      (res.size == this.size + that.size) &&
+      (that != Nil[T]() || res == this)
   }
 
   def head: T = {
@@ -659,11 +660,57 @@ object ListSpecs {
   //@induct
   //def scanVsFoldLeft[A,B](l : List[A], z: B, f: (B,A) => B): Boolean = {
   //  l.scanLeft(z)(f).last == l.foldLeft(z)(f)
-  //}.holds
+  //}.holds  
 
   @induct
   def scanVsFoldRight[A, B](l: List[A], z: B, f: (A, B) => B): Boolean = {
     l.scanRight(z)(f).head == l.foldRight(z)(f)
   }.holds
 
+  // A lemma about `append` and `updated`
+  def appendUpdate[T](l1: List[T], l2: List[T], i: BigInt, y: T): Boolean = {
+    require(0 <= i && i < l1.size + l2.size)
+    // induction scheme
+    (l1 match {
+      case Nil() => true
+      case Cons(x, xs) => if (i == 0) true else appendUpdate[T](xs, l2, i - 1, y)
+    }) &&
+      // lemma
+      ((l1 ++ l2).updated(i, y) == (
+        if (i < l1.size)
+          l1.updated(i, y) ++ l2
+        else
+          l1 ++ l2.updated(i - l1.size, y)))
+  }.holds
+
+  // a lemma about `append`, `take` and `drop`
+  def appendTakeDrop[T](l1: List[T], l2: List[T], n: BigInt): Boolean = {
+    //induction scheme
+    (l1 match {
+      case Nil() => true
+      case Cons(x, xs) => if (n <= 0) true else appendTakeDrop[T](xs, l2, n - 1)
+    }) &&
+      // lemma
+      ((l1 ++ l2).take(n) == (
+        if (n < l1.size) l1.take(n)
+        else if (n > l1.size) l1 ++ l2.take(n - l1.size)
+        else l1)) &&
+        ((l1 ++ l2).drop(n) == (
+          if (n < l1.size) l1.drop(n) ++ l2
+          else if (n > l1.size) l2.drop(n - l1.size)
+          else l2))
+  }.holds
+
+  // A lemma about `append` and `insertAtIndex`
+  def appendInsert[T](l1: List[T], l2: List[T], i: BigInt, y: T): Boolean = {
+    require(0 <= i && i <= l1.size + l2.size)
+    (l1 match {
+      case Nil() => true
+      case Cons(x, xs) => if (i == 0) true else appendInsert[T](xs, l2, i - 1, y)
+    }) &&
+      // lemma
+      ((l1 ++ l2).insertAtIndex(i, y) == (
+        if (i < l1.size) l1.insertAtIndex(i, y) ++ l2
+        else l1 ++ l2.insertAtIndex((i - l1.size), y)))
+  }.holds
 }
