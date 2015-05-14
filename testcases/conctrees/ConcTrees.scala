@@ -125,7 +125,7 @@ object ConcTrees {
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
 
-  //@library
+  @library
   def lookup[T](xs: Conc[T], i: BigInt): (T, BigInt) = {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
@@ -162,7 +162,7 @@ object ConcTrees {
     }
   }.holds
 
-  //@library
+  @library
   def update[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
@@ -238,7 +238,7 @@ object ConcTrees {
    * This concat applies only to normalized trees.
    * This prevents concat from being recursive
    */
-  //@library
+  @library
   def concatNormalized[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized)
@@ -255,7 +255,7 @@ object ConcTrees {
     res._1.isNormalized //auxiliary properties    
     )
 
-   // @library
+  @library
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized &&
@@ -344,7 +344,7 @@ object ConcTrees {
       })
   }.holds
 
-  //@library
+  @library
   def insert[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && i >= 0 && i <= xs.size &&
       xs.isNormalized) //note the precondition
@@ -369,7 +369,7 @@ object ConcTrees {
     res._2 <= 3 * xs.level && // time is linear in the height of the tree
     res._1.toList == xs.toList.insertAtIndex(i, y) && // correctness
     insertAppendAxiomInst(xs, i, y) // instantiation of an axiom 
-    )
+    )    
 
   def insertAppendAxiomInst[T](xs: Conc[T], i: BigInt, y: T): Boolean = {
     require(i >= 0 && i <= xs.size)
@@ -379,8 +379,8 @@ object ConcTrees {
     }
   }.holds
 
-  //TODO: why with instrumentation we are not able prove the running time here ?
-  //@library
+  //TODO: why with instrumentation we are not able prove the running time here ? (performance bug ?)
+  @library
   def split[T](xs: Conc[T], n: BigInt): (Conc[T], Conc[T], BigInt) = {
     require(xs.valid && xs.isNormalized)
     xs match {
@@ -433,7 +433,9 @@ object ConcTrees {
       case Single(_) => 
         CC(xs, ys)
     }
-  } ensuring(res => res.valid)
+  } ensuring(res => res.valid &&
+      res.toList == xs.toList ++ ys.toList  
+      )
 
   /**
    * This is a private method and is not exposed to the
@@ -457,5 +459,17 @@ object ConcTrees {
           Append(l, zs)
       }
     }
-  } ensuring(res => res.valid)
+  } ensuring(res => res.valid &&
+      res.toList == xs.toList ++ ys.toList &&
+      appendAssocInst2(xs, ys))
+      
+  def appendAssocInst2[T](xs: Conc[T], ys: Conc[T]) : Boolean = {
+    xs match {
+      case CC(l, r) =>
+        appendAssoc(l.toList, r.toList, ys.toList)
+      case Append(l, r) =>
+        appendAssoc(l.toList, r.toList, ys.toList)
+      case _ => true
+    }    
+  }.holds
 }
