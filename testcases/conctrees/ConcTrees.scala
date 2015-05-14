@@ -421,46 +421,49 @@ object ConcTrees {
     }
   }.holds
 
-  def append[T](xs: Conc[T], ys: Single[T]): Conc[T] = {
+  def append[T](xs: Conc[T], ys: Single[T]): (Conc[T], BigInt) = {
     require(xs.valid)
     xs match {
       case xs@Append(_, _) => 
         appendPriv(xs, ys)
       case CC(_,_) => 
-        Append(xs, ys) //creating an append node
+        (Append(xs, ys), 0) //creating an append node
       case Empty() => 
-        ys
+        (ys, 0)
       case Single(_) => 
-        CC(xs, ys)
+        (CC(xs, ys), 0)
     }
-  } ensuring(res => res.valid &&
-      res.toList == xs.toList ++ ys.toList  
+  } ensuring(res => res._1.valid && //contree invariants
+      res._1.toList == xs.toList ++ ys.toList &&  //correctness
+      res._2 <= numTrees(xs) - numTrees(res._1) //time bound (worst case)
       )
 
   /**
    * This is a private method and is not exposed to the
    * clients of conc trees
    */
-  def appendPriv[T](xs: Append[T], ys: Conc[T]): Conc[T] = {
+  def appendPriv[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid 
         && !ys.isEmpty && ys.isNormalized &&        
         xs.right.level >= ys.level)
     
     if (xs.right.level > ys.level) 
-      Append(xs, ys)
+      (Append(xs, ys), 0)
     else {
       val zs = CC(xs.right, ys)
       xs.left match {
         case l @ Append(_, _) => 
-          appendPriv(l, zs)
+          val (r, t) = appendPriv(l, zs)
+          (r, t + 1)
         case l if l.level <= zs.level => //note: here < is not possible           
-          CC(l, zs)
+          (CC(l, zs), 0)
         case l => 
-          Append(l, zs)
+          (Append(l, zs), 0)
       }
     }
-  } ensuring(res => res.valid &&
-      res.toList == xs.toList ++ ys.toList &&
+  } ensuring(res => res._1.valid && //conc tree invariants
+      res._1.toList == xs.toList ++ ys.toList && //correctness invariants
+      res._2 <= numTrees(xs) - numTrees(res._1)  && //time bound (worst case)
       appendAssocInst2(xs, ys))
       
   def appendAssocInst2[T](xs: Conc[T], ys: Conc[T]) : Boolean = {
@@ -472,4 +475,11 @@ object ConcTrees {
       case _ => true
     }    
   }.holds
+  
+  def numTrees[T](t: Conc[T]) : BigInt = {
+    t match {
+      case Append(l, r) => numTrees(l) + 1
+      case _ => 1        
+    }
+  } ensuring(_ >= 0)  
 }
