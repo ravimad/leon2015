@@ -75,7 +75,8 @@ object ConcTrees {
           (l match {
             case Append(_, lr) =>
               lr.level > r.level
-            case _ => true
+            case _ => 
+              l.level > r.level 
           })
       case _ => true
     }
@@ -124,7 +125,7 @@ object ConcTrees {
     override def toString = s"Chunk(${array.mkString("", ", ", "")}; $size; $k)"
   }*/
 
-  @library
+  //@library
   def lookup[T](xs: Conc[T], i: BigInt): (T, BigInt) = {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
@@ -161,7 +162,7 @@ object ConcTrees {
     }
   }.holds
 
-  @library
+  //@library
   def update[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && !xs.isEmpty && i >= 0 && i < xs.size)
     xs match {
@@ -237,7 +238,7 @@ object ConcTrees {
    * This concat applies only to normalized trees.
    * This prevents concat from being recursive
    */
-  @library
+  //@library
   def concatNormalized[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized)
@@ -254,7 +255,7 @@ object ConcTrees {
     res._1.isNormalized //auxiliary properties    
     )
 
-    @library
+   // @library
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized &&
@@ -343,7 +344,7 @@ object ConcTrees {
       })
   }.holds
 
-  @library
+  //@library
   def insert[T](xs: Conc[T], i: BigInt, y: T): (Conc[T], BigInt) = {
     require(xs.valid && i >= 0 && i <= xs.size &&
       xs.isNormalized) //note the precondition
@@ -379,7 +380,7 @@ object ConcTrees {
   }.holds
 
   //TODO: why with instrumentation we are not able prove the running time here ?
-  @library
+  //@library
   def split[T](xs: Conc[T], n: BigInt): (Conc[T], Conc[T], BigInt) = {
     require(xs.valid && xs.isNormalized)
     xs match {
@@ -420,11 +421,11 @@ object ConcTrees {
     }
   }.holds
 
-  def appendTop[T](xs: Conc[T], ys: Conc[T]): Conc[T] = {
-    require(xs.valid && ys.isLeaf && !ys.isEmpty)
+  def append[T](xs: Conc[T], ys: Single[T]): Conc[T] = {
+    require(xs.valid)
     xs match {
       case xs@Append(_, _) => 
-        append(xs, ys)
+        appendPriv(xs, ys)
       case CC(_,_) => 
         Append(xs, ys) //creating an append node
       case Empty() => 
@@ -434,7 +435,11 @@ object ConcTrees {
     }
   } ensuring(res => res.valid)
 
-  def append[T](xs: Append[T], ys: Conc[T]): Conc[T] = {
+  /**
+   * This is a private method and is not exposed to the
+   * clients of conc trees
+   */
+  def appendPriv[T](xs: Append[T], ys: Conc[T]): Conc[T] = {
     require(xs.valid && ys.valid 
         && !ys.isEmpty && ys.isNormalized &&        
         xs.right.level >= ys.level)
@@ -444,13 +449,12 @@ object ConcTrees {
     else {
       val zs = CC(xs.right, ys)
       xs.left match {
-        case ws @ Append(_, _) => 
-          append(ws, zs)
-        case ws if ws.level <= zs.level => //note: here strict <= is not possible 
-          concatNonEmpty(ws, zs)._1
-          //CC(ws, zs)
-        case ws => 
-          Append(ws, zs)
+        case l @ Append(_, _) => 
+          appendPriv(l, zs)
+        case l if l.level <= zs.level => //note: here < is not possible           
+          CC(l, zs)
+        case l => 
+          Append(l, zs)
       }
     }
   } ensuring(res => res.valid)
