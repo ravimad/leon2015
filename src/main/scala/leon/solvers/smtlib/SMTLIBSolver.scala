@@ -34,23 +34,25 @@ abstract class SMTLIBSolver(val context: LeonContext,
   extends IncrementalSolver with Interruptible {
 
 
-  // Solver name
+  /* Solver name */
   def targetName: String
   override def name: String = "smt-"+targetName
 
-  // Reporter
+  /* Reporter */
   protected val reporter = context.reporter
 
-  // Interface with Interpreter
+  /* Interface with Interpreter */
+
   def interpreterOps(ctx: LeonContext): Seq[String]
 
   def getNewInterpreter(ctx: LeonContext): SMTInterpreter
 
   protected val interpreter = getNewInterpreter(context)
 
-  protected var out: java.io.FileWriter = _
 
-  reporter.ifDebug { debug =>
+  /* Printing VCs */
+
+  protected val out: java.io.FileWriter = if (reporter.isDebugEnabled) {
     val file = context.files.headOption.map(_.getName).getOrElse("NA")
     val n    = VCNumbers.getNext(targetName+file)
 
@@ -60,14 +62,16 @@ abstract class SMTLIBSolver(val context: LeonContext,
       dir.mkdir
     }
 
-    out = new java.io.FileWriter(s"vcs/$targetName-$file-$n.smt2", false)
-  }
+    new java.io.FileWriter(s"vcs/$targetName-$file-$n.smt2", false)
+  } else null
 
 
-  // Interrupts
+  /* Interruptible interface */
+
   protected var interrupted = false
 
   context.interruptManager.registerForInterrupts(this)
+
   override def interrupt(): Unit = {
     interrupted = true
     interpreter.interrupt()
@@ -76,28 +80,13 @@ abstract class SMTLIBSolver(val context: LeonContext,
     interrupted = false
   }
 
-  override def free() = {
-    interpreter.free()
-    context.interruptManager.unregisterForInterrupts(this)
-    reporter.ifDebug { _ => out.close() }
-  }
 
 
+  /*
+   * Translation from Leon Expressions to SMTLIB terms and reverse
+   */
 
-
-  /** Translation from Leon Expressions etc. */
-
-  // Unique numbers
-  protected object VCNumbers {
-    private var nexts = Map[String, Int]().withDefaultValue(0)
-    def getNext(id: String) = {
-      val n = nexts(id)+1
-      nexts += id -> n
-      n
-    }
-  }
-
-  // Symbols
+  /* Symbol handling */
   protected object SimpleSymbol {
     def unapply(term: Term): Option[SSymbol] = term match {
       case QualifiedIdentifier(SMTIdentifier(sym, Seq()), None) => Some(sym)
@@ -114,7 +103,8 @@ abstract class SMTLIBSolver(val context: LeonContext,
   protected def freshSym(id: Identifier): SSymbol = freshSym(id.name)
   protected def freshSym(name: String): SSymbol = id2sym(FreshIdentifier(name))
 
-  // metadata for CC, and variables
+
+  /* Metadata for CC, and variables */
   protected val constructors  = new IncrementalBijection[TypeTree, SSymbol]()
   protected val selectors     = new IncrementalBijection[(TypeTree, Int), SSymbol]()
   protected val testers       = new IncrementalBijection[TypeTree, SSymbol]()
@@ -126,7 +116,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
   protected def hasError = errors.getB(()) contains true
   protected def addError() = errors += () -> true
 
-  // A manager object for the Option type (since it is hard-coded for Maps)
+  /* A manager object for the Option type (since it is hard-coded for Maps) */
   protected object OptionManager {
     lazy val leonOption = program.library.Option.get
     lazy val leonSome = program.library.Some.get
@@ -175,7 +165,8 @@ abstract class SMTLIBSolver(val context: LeonContext,
   }
 
 
-  // Helpers
+  /* Helper functions */
+
 
   protected def normalizeType(t: TypeTree): TypeTree = t match {
     case ct: ClassType if ct.parent.isDefined => ct.parent.get
@@ -300,7 +291,6 @@ abstract class SMTLIBSolver(val context: LeonContext,
     }
   }
 
-
   protected def getHierarchy(ct: ClassType): (ClassType, Seq[CaseClassType]) = ct match {
     case act: AbstractClassType =>
       (act, act.knownCCDescendents)
@@ -312,7 +302,6 @@ abstract class SMTLIBSolver(val context: LeonContext,
           (cct, List(cct))
       }
   }
-
 
   protected case class DataType(sym: SSymbol, cases: Seq[Constructor])
   protected case class Constructor(sym: SSymbol, tpe: TypeTree, fields: Seq[(SSymbol, TypeTree)])
@@ -487,6 +476,8 @@ abstract class SMTLIBSolver(val context: LeonContext,
     f
   }
 
+  /* Translate a Leon Expr to an SMTLIB term */
+
   protected def toSMT(e: Expr)(implicit bindings: Map[Identifier, Term]): Term = {
     e match {
       case Variable(id) =>
@@ -644,8 +635,36 @@ abstract class SMTLIBSolver(val context: LeonContext,
       case Plus(a,b) => Ints.Add(toSMT(a), toSMT(b))
       case Minus(a,b) => Ints.Sub(toSMT(a), toSMT(b))
       case Times(a,b) => Ints.Mul(toSMT(a), toSMT(b))
-      case Division(a,b) => Ints.Div(toSMT(a), toSMT(b))
-      case Modulo(a,b) => Ints.Mod(toSMT(a), toSMT(b))
+      case Division(a,b) => {
+        val ar = toSMT(a)
+        val br = toSMT(b)
+
+        val case1 = (
+          Core.And(Ints.LessThan(ar, Ints.NumeralLit(0)), Ints.LessThan(br, Ints.NumeralLit(0))),
+          Ints.Div(Ints.Neg(ar), Ints.Neg(br))
+        )
+        val case2 = (
+          Core.And(Ints.LessThan(ar, Ints.NumeralLit(0)), Ints.GreaterEquals(br, Ints.NumeralLit(0))),
+          Ints.Neg(Ints.Div(Ints.Neg(ar), br))
+        )
+        val case3 = (
+          Core.And(Ints.GreaterEquals(ar, Ints.NumeralLit(0)), Ints.LessThan(br, Ints.NumeralLit(0))),
+          Ints.Div(ar, br)
+        )
+        val case4 = (
+          Core.And(Ints.GreaterEquals(ar, Ints.NumeralLit(0)), Ints.GreaterEquals(br, Ints.NumeralLit(0))),
+          Ints.Div(ar, br)
+        )
+        
+        Core.ITE(case1._1, case1._2,
+          Core.ITE(case2._1, case2._2,
+            Core.ITE(case3._1, case3._2,
+              Core.ITE(case4._1, case4._2, Ints.NumeralLit(0)))))
+      }
+      case Modulo(a,b) => {
+        val q = toSMT(Division(a, b))
+        Ints.Sub(toSMT(a), Ints.Mul(toSMT(b), q))
+      }
       case LessThan(a,b) => a.getType match {
         case Int32Type => FixedSizeBitVectors.SLessThan(toSMT(a), toSMT(b))
         case IntegerType => Ints.LessThan(toSMT(a), toSMT(b))
@@ -688,6 +707,8 @@ abstract class SMTLIBSolver(val context: LeonContext,
         throw new IllegalArgumentException
     }
   }
+
+  /* Translate an SMTLIB term back to a Leon Expr */
 
   protected def fromSMT(pair: (Term, TypeTree))(implicit lets: Map[SSymbol, Term], letDefs: Map[SSymbol, DefineFun]): Expr = {
     fromSMT(pair._1, pair._2)
@@ -781,6 +802,8 @@ abstract class SMTLIBSolver(val context: LeonContext,
       unsupported("Unhandled case in fromSMT: " + (s, tpe))
   }
 
+
+  /* Send a command to the solver */
   def sendCommand(cmd: Command): CommandResponse = {
     reporter.ifDebug { debug =>
       SMTPrinter.printCommand(cmd, out)
@@ -799,7 +822,13 @@ abstract class SMTLIBSolver(val context: LeonContext,
   }
 
 
-  // Public solver interface
+  /* Public solver interface */
+
+  def free() = {
+    interpreter.free()
+    context.interruptManager.unregisterForInterrupts(this)
+    reporter.ifDebug { _ => out.close() }
+  }
 
   override def assertCnstr(expr: Expr): Unit = if(!hasError) {
     variablesOf(expr).foreach(declareVariable)
@@ -812,7 +841,6 @@ abstract class SMTLIBSolver(val context: LeonContext,
         // invocations will return None
         addError()
     }
-
   }
 
   override def check: Option[Boolean] = {
@@ -876,3 +904,12 @@ abstract class SMTLIBSolver(val context: LeonContext,
 
 }
 
+// Unique numbers
+protected object VCNumbers {
+  private var nexts = Map[String, Int]().withDefaultValue(0)
+  def getNext(id: String) = {
+    val n = nexts(id)+1
+    nexts += id -> n
+    n
+  }
+}
