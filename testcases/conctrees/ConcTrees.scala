@@ -421,7 +421,7 @@ object ConcTrees {
     }
   }.holds
 
-  def append[T](xs: Conc[T], ys: Single[T]): (Conc[T], BigInt) = {
+  /*def append[T](xs: Conc[T], ys: Single[T]): (Conc[T], BigInt) = {
     require(xs.valid)
     xs match {
       case xs@Append(_, _) => 
@@ -436,13 +436,13 @@ object ConcTrees {
   } ensuring(res => res._1.valid && //contree invariants
       res._1.toList == xs.toList ++ ys.toList &&  //correctness
       res._2 <= numTrees(xs) - numTrees(res._1) //time bound (worst case)
-      )
+      )*/
 
   /**
    * This is a private method and is not exposed to the
    * clients of conc trees
    */
-  def appendPriv[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
+  /*def appendPriv[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid 
         && !ys.isEmpty && ys.isNormalized &&        
         xs.right.level >= ys.level)
@@ -464,7 +464,32 @@ object ConcTrees {
   } ensuring(res => res._1.valid && //conc tree invariants
       res._1.toList == xs.toList ++ ys.toList && //correctness invariants
       res._2 <= numTrees(xs) - numTrees(res._1)  && //time bound (worst case)
-      appendAssocInst2(xs, ys))
+      appendAssocInst2(xs, ys))*/
+
+  abstract class LeftList 
+  case class LCons(l: LeftList, x: BigInt) extends LeftList
+  case class LNil() extends LeftList
+  
+  def appendPriv(xs: LCons, ys: BigInt, b: Boolean): (LCons, BigInt) = {   
+    if (b)
+      (LCons(xs, ys), 0)
+    else {      
+      xs.l match {
+        case l @ LCons(_, _) =>
+          val (r, t) = appendPriv(l, ys, b)
+          (r, t + 1)
+        case _ => 
+          (xs, 0)       
+      }
+    }
+  } ensuring (res => res._2 <= lsize(xs) - lsize(res._1))
+  
+  def lsize(l: LeftList) : BigInt = {
+    l match {
+      case LCons(l, r) => lsize(l) + 1
+      case _ => 1        
+    }
+  } ensuring(_ >= 0) 
       
   def appendAssocInst2[T](xs: Conc[T], ys: Conc[T]) : Boolean = {
     xs match {

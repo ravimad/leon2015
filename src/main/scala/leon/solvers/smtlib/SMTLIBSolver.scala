@@ -28,6 +28,15 @@ import _root_.smtlib.parser.CommandsResponses.{Error => ErrorResponse, _}
 import _root_.smtlib.theories._
 import _root_.smtlib.{Interpreter => SMTInterpreter}
 
+// Unique numbers
+protected object VCNumbers {
+  private var nexts = Map[String, Int]().withDefaultValue(0)
+  def getNext(id: String) = {
+    val n = nexts(id) + 1
+    nexts += id -> n
+    n
+  }
+}
 
 abstract class SMTLIBSolver(val context: LeonContext,
                             val program: Program)
@@ -52,6 +61,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
 
   reporter.ifDebug { debug =>
     val file = context.files.headOption.map(_.getName).getOrElse("NA")
+    println("Target+file: "+targetName+file)
     val n    = VCNumbers.getNext(targetName+file)
 
     val dir = new java.io.File("vcs")
@@ -59,8 +69,9 @@ abstract class SMTLIBSolver(val context: LeonContext,
     if (!dir.isDirectory) {
       dir.mkdir
     }
-
-    out = new java.io.FileWriter(s"vcs/$targetName-$file-$n.smt2", false)
+    val fn = s"vcs/$targetName-$file-$n.smt2"
+    println("Creating a new file: "+fn)
+    out = new java.io.FileWriter(fn, false)
   }
 
 
@@ -83,19 +94,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
   }
 
 
-
-
-  /** Translation from Leon Expressions etc. */
-
-  // Unique numbers
-  protected object VCNumbers {
-    private var nexts = Map[String, Int]().withDefaultValue(0)
-    def getNext(id: String) = {
-      val n = nexts(id)+1
-      nexts += id -> n
-      n
-    }
-  }
+  /** Translation from Leon Expressions etc. */  
 
   // Symbols
   protected object SimpleSymbol {
@@ -782,7 +781,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
   }
 
   def sendCommand(cmd: Command): CommandResponse = {
-    reporter.ifDebug { debug =>
+    reporter.ifDebug { debug =>      
       SMTPrinter.printCommand(cmd, out)
       out.write("\n")
       out.flush()

@@ -16,7 +16,7 @@ import smtlib.theories.Core.Equals
 // It is not meant as an underlying solver to UnrollingSolver, and does not handle HOFs.
 abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program) extends SMTLIBCVC4Solver(context, program) {
 
-  override val targetName = "cvc4-quantified"
+  override def targetName = "cvc4-quantified"
 
   private val typedFunDefExplorationLimit = 10000
 
@@ -113,7 +113,8 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
   // For this solver, we prefer the variables of assert() commands to be exist. quantified instead of free
   override def assertCnstr(expr: Expr) =
     try {
-      sendCommand(SMTAssert(quantifiedTerm(Exists, expr)))
+      val cmd = SMTAssert(quantifiedTerm(Exists, expr))      
+      sendCommand(cmd)
     } catch {
       case _ : IllegalArgumentException =>
         addError()
