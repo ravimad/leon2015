@@ -475,13 +475,12 @@ object ConcTrees {
       case _ => BigInt(1)
     }
   } ensuring (res => res >= 0)
-  
-  
+
   @library
   def normalize[T](t: Conc[T]): (Conc[T], BigInt) = {
     require(t.valid)
     t match {
-      case Append(l@Append(_,_), r) =>
+      case Append(l @ Append(_, _), r) =>
         wrap(l, r)
       case Append(l, r) =>
         concatNormalized(l, r)
@@ -493,15 +492,15 @@ object ConcTrees {
     res._1.toList == t.toList && //correctness
     res._1.size == t.size && res._1.level <= t.level && //normalize preserves level and size
     res._2 <= t.level //time bound (a little over approximate)
-    ) 
+    )
 
   @library
   def wrap[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
-    require(xs.valid && ys.valid && ys.isNormalized && 
-        xs.right.level >= ys.level)
+    require(xs.valid && ys.valid && ys.isNormalized &&
+      xs.right.level >= ys.level)
     val (nr, t) = concatNormalized(xs.right, ys)
     xs.left match {
-      case l@Append(_, _) =>        
+      case l @ Append(_, _) =>
         val (res, t2) = wrap(l, nr)
         (res, t + t2)
       case l =>
@@ -515,7 +514,6 @@ object ConcTrees {
     res._1.level <= xs.level &&
     res._2 <= xs.level - ys.level && //time bound
     appendAssocInst2(xs, ys)) //some lemma instantiations
-
 
   /**
    * A class that represents an operation on a concTree.
@@ -534,57 +532,48 @@ object ConcTrees {
    * Proving amortized running time of 'Append' when used ephimerally.
    * ops- a arbitrary sequence of operations,
    * noaps - number of append operations in the list
-   * nops - number  of non-append operations in the list
    */
-  def performOperations[T](xs: Conc[T], ops: List[Operation[T]], noaps: BigInt, nops: BigInt): (Conc[T], BigInt) = {
-    require(xs.valid &&
-      noaps >= 0 && nops >= 0 &&
-      noaps + nops == ops.size) //not strictly necessary
+  def performOperations[T](xs: Conc[T], ops: List[Operation[T]], noaps: BigInt): (Conc[T], BigInt) = {
+    require(xs.valid && noaps >= 0)       
     ops match {
-      case Cons(Operation(id, i, _), tail) if id <= 0 && nops > 0 =>
-        //we need to perform a lookup operation
-        val t1 = if (0 <= i && i < xs.size) //do the operation only if its precondition holds
+      case Cons(Operation(id, i, _), tail) if id <= 0 =>
+        //we need to perform a lookup operation, but do the operation only if 
+        //preconditions hold
+        val _ = if (0 <= i && i < xs.size)
           lookup(xs, i)._2
-        else BigInt(0)
-        val (r, t2) = performOperations(xs, tail, noaps, nops - 1)
-        (r, t1 + t2) //total time = time taken by this operation + time taken by the remaining operations 
-
-      case Cons(Operation(id, i, x), tail) if id == 1 && nops > 0 =>
-        val (newt, t1) = if (0 <= i && i < xs.size)
-          update(xs, i, x)
-        else (xs, BigInt(0))
+        else
+          BigInt(0)
+        performOperations(xs, tail, noaps) //returns the time taken by appends in the remaining operations
+         
+      case Cons(Operation(id, i, x), tail) if id == 1 =>
+        val newt = if (0 <= i && i < xs.size)
+          update(xs, i, x)._1
+        else xs
         //note that only the return value is used by the subsequent operations (emphimeral use)
-        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
-        (r, t1 + t2)
+        performOperations(newt, tail, noaps)        
 
-//      case Cons(Operation(id, i, x), tail) if id == 2 && nops > 0 =>
-//        val (normt, t0) = normalize(xs)
-//        val (newt, t1) = if (0 <= i && i <= xs.size)
-//          insert(normt, i, x)
-//        else (xs, BigInt(0))
-//        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
-//        (r, t0 + t1 + t2)
-//
-//      case Cons(Operation(id, n, _), tail) if id == 3 && nops > 0 =>
-//        //here we use the larger tree to perform the remaining operations
-//        val (normt, t0) = normalize(xs)
-//        val (newl, newr, t1) = split(normt, n)
-//        val newt = if (newl.size >= newr.size) newl else newr
-//        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
-//        (r, t0 + t1 + t2)
+      case Cons(Operation(id, i, x), tail) if id == 2 =>         
+        val newt = if (0 <= i && i <= xs.size)
+          insert(normalize(xs)._1, i, x)._1
+        else xs
+        performOperations(newt, tail, noaps)
+
+      case Cons(Operation(id, n, _), tail) if id == 3 =>
+        //use the larger tree to perform the remaining operations        
+        val (newl, newr, _) = split(normalize(xs)._1, n)
+        val newt = if (newl.size >= newr.size) newl else newr
+        performOperations(newt, tail, noaps)        
 
       case Cons(Operation(id, _, x), tail) if noaps > 0 =>
         //here, we need to perform append operation
         val (newt, t1) = append(xs, x)
-        val (r, t2) = performOperations(newt, tail, noaps - 1, nops)
-        (r, t1 + t2)
+        val (r, t2) = performOperations(newt, tail, noaps - 1)
+        (r, t1 + t2) //time taken by this append and those that follow it
 
       case _ =>
         //here, there is some precondition violation
         (xs, 0)
     }
-  } ensuring(res => //res._2 <= noaps + 2*nops*(xs.level + res._1.level)+ numTrees(xs) //&& 
-      //2*(nops -1)*res._1.level == 2*nops*res._1.level -2*res._1.level && 
-    )
-  
+  } ensuring (res => res._2 <= noaps + numTrees(xs)) 
+      //res._2 <= noaps + 2*nops*(xs.level + res._1.level)+ numTrees(xs)        	
 }
