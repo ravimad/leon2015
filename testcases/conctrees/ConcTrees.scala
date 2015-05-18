@@ -204,40 +204,6 @@ object ConcTrees {
     }
   }.holds
 
-  //@library
-  def normalize[T](t: Conc[T]): (Conc[T], BigInt) = {
-    require(t.valid)
-    t match {
-      case Append(l, r) =>
-        wrap(l, r)
-      case _ =>
-        (t, 0)
-    }
-  } ensuring (res => res._1.valid &&
-    res._1.isNormalized &&
-    res._1.toList == t.toList && //correctness
-    res._1.size == t.size && res._1.level == t.level) //normalize preseves level and size
-
-  //@library
-  def wrap[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
-    require(xs.valid && ys.valid && ys.isNormalized)
-    	/*&& 
-        xs.level > ys.level)*/
-    xs match {
-      case Append(l, r) =>
-        val (nr, t) = concatNormalized(r, ys)
-        val (res, t2) = wrap(l, nr)
-        (res, t + t2)
-      case _ =>
-        concatNormalized(xs, ys)
-    }
-  } ensuring (res => res._1.valid &&
-    res._1.isNormalized &&
-    res._1.toList == xs.toList ++ ys.toList && //correctness
-    res._1.size == xs.size + ys.size && //other auxiliary properties
-    res._1.level <= max(xs.level, ys.level) + 1 &&
-    appendAssocInst2(xs, ys)) //some lemma instantiations
-
   /**
    * A generic concat that applies to general concTrees
    */
@@ -457,6 +423,7 @@ object ConcTrees {
     }
   } ensuring (res => res._1.valid && //conctree invariants
     res._1.toList == xs.toList ++ Cons(x, Nil[T]()) && //correctness
+    res._1.level <= xs.level + 1 &&
     res._2 <= numTrees(xs) - numTrees(res._1) + 1 //time bound (worst case)
     )
 
@@ -486,6 +453,7 @@ object ConcTrees {
     }
   } ensuring (res => res._1.valid && //conc tree invariants
     res._1.toList == xs.toList ++ ys.toList && //correctness invariants
+    res._1.level <= xs.level + 1 &&
     res._2 <= numTrees(xs) - numTrees(res._1) + 1 && //time bound (worst case)
     appendAssocInst2(xs, ys))
 
@@ -507,6 +475,47 @@ object ConcTrees {
       case _ => BigInt(1)
     }
   } ensuring (res => res >= 0)
+  
+  
+  //@library
+  def normalize[T](t: Conc[T]): (Conc[T], BigInt) = {
+    require(t.valid)
+    t match {
+      case Append(l@Append(_,_), r) =>
+        wrap(l, r)
+      case Append(l, r) =>
+        concatNormalized(l, r)
+      case _ =>
+        (t, 0)
+    }
+  } ensuring (res => res._1.valid &&
+    res._1.isNormalized &&
+    res._1.toList == t.toList && //correctness
+    res._1.size == t.size && res._1.level <= t.level && //normalize preserves level and size
+    res._2 <= t.level //time bound (a little over approximate)
+    ) 
+
+  //@library
+  def wrap[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
+    require(xs.valid && ys.valid && ys.isNormalized && 
+        xs.right.level >= ys.level)
+    val (nr, t) = concatNormalized(xs.right, ys)
+    xs.left match {
+      case l@Append(_, _) =>        
+        val (res, t2) = wrap(l, nr)
+        (res, t + t2)
+      case l =>
+        val (res, t3) = concatNormalized(l, nr)
+        (res, t + t3)
+    }
+  } ensuring (res => res._1.valid &&
+    res._1.isNormalized &&
+    res._1.toList == xs.toList ++ ys.toList && //correctness
+    res._1.size == xs.size + ys.size && //other auxiliary properties
+    res._1.level <= xs.level &&
+    res._2 <= xs.level - ys.level && //time bound
+    appendAssocInst2(xs, ys)) //some lemma instantiations
+
 
   /**
    * A class that represents an operation on a concTree.
