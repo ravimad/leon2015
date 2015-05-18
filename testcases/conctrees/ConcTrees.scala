@@ -477,7 +477,7 @@ object ConcTrees {
   } ensuring (res => res >= 0)
   
   
-  //@library
+  @library
   def normalize[T](t: Conc[T]): (Conc[T], BigInt) = {
     require(t.valid)
     t match {
@@ -495,7 +495,7 @@ object ConcTrees {
     res._2 <= t.level //time bound (a little over approximate)
     ) 
 
-  //@library
+  @library
   def wrap[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid && ys.isNormalized && 
         xs.right.level >= ys.level)
@@ -538,9 +538,10 @@ object ConcTrees {
    */
   def performOperations[T](xs: Conc[T], ops: List[Operation[T]], noaps: BigInt, nops: BigInt): (Conc[T], BigInt) = {
     require(xs.valid &&
+      noaps >= 0 && nops >= 0 &&
       noaps + nops == ops.size) //not strictly necessary
     ops match {
-      case Cons(Operation(id, i, _), tail) if id <= 0 =>
+      case Cons(Operation(id, i, _), tail) if id <= 0 && nops > 0 =>
         //we need to perform a lookup operation
         val t1 = if (0 <= i && i < xs.size) //do the operation only if its precondition holds
           lookup(xs, i)._2
@@ -548,7 +549,7 @@ object ConcTrees {
         val (r, t2) = performOperations(xs, tail, noaps, nops - 1)
         (r, t1 + t2) //total time = time taken by this operation + time taken by the remaining operations 
 
-      case Cons(Operation(id, i, x), tail) if id == 1 =>
+      case Cons(Operation(id, i, x), tail) if id == 1 && nops > 0 =>
         val (newt, t1) = if (0 <= i && i < xs.size)
           update(xs, i, x)
         else (xs, BigInt(0))
@@ -556,30 +557,34 @@ object ConcTrees {
         val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
         (r, t1 + t2)
 
-      case Cons(Operation(id, i, x), tail) if id == 2 =>
-        val (normt, t0) = normalize(xs)
-        val (newt, t1) = if (0 <= i && i <= xs.size)
-          insert(normt, i, x)
-        else (xs, BigInt(0))
-        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
-        (r, t0 + t1 + t2)
+//      case Cons(Operation(id, i, x), tail) if id == 2 && nops > 0 =>
+//        val (normt, t0) = normalize(xs)
+//        val (newt, t1) = if (0 <= i && i <= xs.size)
+//          insert(normt, i, x)
+//        else (xs, BigInt(0))
+//        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
+//        (r, t0 + t1 + t2)
+//
+//      case Cons(Operation(id, n, _), tail) if id == 3 && nops > 0 =>
+//        //here we use the larger tree to perform the remaining operations
+//        val (normt, t0) = normalize(xs)
+//        val (newl, newr, t1) = split(normt, n)
+//        val newt = if (newl.size >= newr.size) newl else newr
+//        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
+//        (r, t0 + t1 + t2)
 
-      case Cons(Operation(id, n, _), tail) if id == 3 =>
-        //here we use the larger tree to perform the remaining operations
-        val (normt, t0) = normalize(xs)
-        val (newl, newr, t1) = split(normt, n)
-        val newt = if (newl.size >= newr.size) newl else newr
-        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
-        (r, t0 + t1 + t2)
-
-      case Cons(Operation(id, _, x), tail) =>
+      case Cons(Operation(id, _, x), tail) if noaps > 0 =>
         //here, we need to perform append operation
         val (newt, t1) = append(xs, x)
         val (r, t2) = performOperations(newt, tail, noaps - 1, nops)
         (r, t1 + t2)
 
-      case Nil() =>
+      case _ =>
+        //here, there is some precondition violation
         (xs, 0)
     }
-  }
+  } ensuring(res => //res._2 <= noaps + 2*nops*(xs.level + res._1.level)+ numTrees(xs) //&& 
+      //2*(nops -1)*res._1.level == 2*nops*res._1.level -2*res._1.level && 
+    )
+  
 }
