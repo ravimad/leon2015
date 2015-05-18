@@ -75,8 +75,8 @@ object ConcTrees {
           (l match {
             case Append(_, lr) =>
               lr.level > r.level
-            case _ => 
-              l.level > r.level 
+            case _ =>
+              l.level > r.level
           })
       case _ => true
     }
@@ -151,6 +151,7 @@ object ConcTrees {
     res._1 == xs.toList(i) && // correctness
     instAppendIndexAxiom(xs, i)) // an auxiliary axiom instantiation that required for the proof
 
+  @library
   def instAppendIndexAxiom[T](xs: Conc[T], i: BigInt): Boolean = {
     require(0 <= i && i < xs.size)
     xs match {
@@ -190,6 +191,7 @@ object ConcTrees {
     res._1.toList == xs.toList.updated(i, y) && // correctness
     instAppendUpdateAxiom(xs, i, y)) // an auxiliary axiom instantiation
 
+  @library
   def instAppendUpdateAxiom[T](xs: Conc[T], i: BigInt, y: T): Boolean = {
     require(i >= 0 && i < xs.size)
     xs match {
@@ -201,6 +203,7 @@ object ConcTrees {
     }
   }.holds
 
+  @library
   def normalize[T](t: Conc[T]): (Conc[T], BigInt) = {
     require(t.valid)
     t match {
@@ -209,8 +212,12 @@ object ConcTrees {
       case _ =>
         (t, 0)
     }
-  } ensuring (res => res._1.valid && res._1.isNormalized)
+  } ensuring (res => res._1.valid &&
+    res._1.isNormalized &&
+    res._1.toList == t.toList && //correctness
+    res._1.size == t.size) //other auxiliary properties
 
+  @library
   def wrap[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid && ys.isNormalized)
     xs match {
@@ -221,11 +228,16 @@ object ConcTrees {
       case _ =>
         concatNormalized(xs, ys)
     }
-  } ensuring (res => res._1.valid && res._1.isNormalized)
+  } ensuring (res => res._1.valid &&
+    res._1.isNormalized &&
+    res._1.toList == xs.toList ++ ys.toList && //correctness
+    res._1.size == xs.size + ys.size && //other auxiliary propertiess
+    appendAssocInst2(xs, ys)) //some lemma instantiations
 
   /**
    * A generic concat that applies to general concTrees
    */
+  @library
   def concat[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid)
     val (nxs, t1) = normalize(xs)
@@ -313,12 +325,14 @@ object ConcTrees {
   } ensuring (res => res._2 <= abs(xs.level - ys.level) && // time bound
     res._1.level <= max(xs.level, ys.level) + 1 && // height invariants
     res._1.level >= max(xs.level, ys.level) &&
+    res._1.balanced && res._1.appendInv && res._1.concInv && //this is should not be needed. But, seems necessary for leon 
     res._1.valid && // tree invariant is preserved
     res._1.toList == xs.toList ++ ys.toList && // correctness
     res._1.isNormalized && // auxiliary properties
     appendAssocInst(xs, ys) // instantiation of an axiom
     )
 
+  @library
   def appendAssocInst[T](xs: Conc[T], ys: Conc[T]): Boolean = {
     (xs match {
       case CC(l, r) =>
@@ -369,8 +383,9 @@ object ConcTrees {
     res._2 <= 3 * xs.level && // time is linear in the height of the tree
     res._1.toList == xs.toList.insertAtIndex(i, y) && // correctness
     insertAppendAxiomInst(xs, i, y) // instantiation of an axiom 
-    )    
+    )
 
+  @library
   def insertAppendAxiomInst[T](xs: Conc[T], i: BigInt, y: T): Boolean = {
     require(i >= 0 && i <= xs.size)
     xs match {
@@ -385,24 +400,24 @@ object ConcTrees {
     require(xs.valid && xs.isNormalized)
     xs match {
       case Empty() =>
-        (Empty(), Empty(), 0)
+        (Empty(), Empty(), BigInt(0))
       case s @ Single(x) =>
         if (n <= 0) { //a minor fix
-          (Empty(), s, 0)
+          (Empty(), s, BigInt(0))
         } else {
-          (s, Empty(), 0)
+          (s, Empty(), BigInt(0))
         }
       case CC(l, r) =>
         if (n < l.size) {
           val (ll, lr, t) = split(l, n)
           val (nr, t2) = concatNormalized(lr, r)
-          (ll, nr, t + t2 + 1)
+          (ll, nr, t + t2 + BigInt(1))
         } else if (n > l.size) {
           val (rl, rr, t) = split(r, n - l.size)
           val (nl, t2) = concatNormalized(l, rl)
-          (nl, rr, t + t2 + 1)
+          (nl, rr, t + t2 + BigInt(1))
         } else {
-          (l, r, 0)
+          (l, r, BigInt(0))
         }
     }
   } ensuring (res => res._1.valid && res._2.valid && // tree invariants are preserved
@@ -413,6 +428,7 @@ object ConcTrees {
     instSplitAxiom(xs, n) // instantiation of an axiom     
     )
 
+  @library
   def instSplitAxiom[T](xs: Conc[T], n: BigInt): Boolean = {
     xs match {
       case CC(l, r) =>
@@ -421,90 +437,136 @@ object ConcTrees {
     }
   }.holds
 
-  /*def append[T](xs: Conc[T], ys: Single[T]): (Conc[T], BigInt) = {
+  @library
+  def append[T](xs: Conc[T], x: T): (Conc[T], BigInt) = {
     require(xs.valid)
+    val ys = Single[T](x)
     xs match {
-      case xs@Append(_, _) => 
+      case xs @ Append(_, _) =>
         appendPriv(xs, ys)
-      case CC(_,_) => 
+      case CC(_, _) =>
         (Append(xs, ys), 0) //creating an append node
-      case Empty() => 
+      case Empty() =>
         (ys, 0)
-      case Single(_) => 
+      case Single(_) =>
         (CC(xs, ys), 0)
     }
-  } ensuring(res => res._1.valid && //contree invariants
-      res._1.toList == xs.toList ++ ys.toList &&  //correctness
-      res._2 <= numTrees(xs) - numTrees(res._1) //time bound (worst case)
-      )*/
+  } ensuring (res => res._1.valid && //conctree invariants
+    res._1.toList == xs.toList ++ Cons(x, Nil[T]()) && //correctness
+    res._2 <= numTrees(xs) - numTrees(res._1) + 1 //time bound (worst case)
+    )
 
   /**
    * This is a private method and is not exposed to the
    * clients of conc trees
    */
-  /*def appendPriv[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
-    require(xs.valid && ys.valid 
-        && !ys.isEmpty && ys.isNormalized &&        
-        xs.right.level >= ys.level)
-    
-    if (xs.right.level > ys.level) 
+  @library
+  def appendPriv[T](xs: Append[T], ys: Conc[T]): (Conc[T], BigInt) = {
+    require(xs.valid && ys.valid &&
+      !ys.isEmpty && ys.isNormalized &&
+      xs.right.level >= ys.level)
+
+    if (xs.right.level > ys.level)
       (Append(xs, ys), 0)
     else {
       val zs = CC(xs.right, ys)
       xs.left match {
-        case l @ Append(_, _) => 
+        case l @ Append(_, _) =>
           val (r, t) = appendPriv(l, zs)
           (r, t + 1)
         case l if l.level <= zs.level => //note: here < is not possible           
           (CC(l, zs), 0)
-        case l => 
+        case l =>
           (Append(l, zs), 0)
       }
     }
-  } ensuring(res => res._1.valid && //conc tree invariants
-      res._1.toList == xs.toList ++ ys.toList && //correctness invariants
-      res._2 <= numTrees(xs) - numTrees(res._1)  && //time bound (worst case)
-      appendAssocInst2(xs, ys))*/
+  } ensuring (res => res._1.valid && //conc tree invariants
+    res._1.toList == xs.toList ++ ys.toList && //correctness invariants
+    res._2 <= numTrees(xs) - numTrees(res._1) + 1 && //time bound (worst case)
+    appendAssocInst2(xs, ys))
 
-  abstract class LeftList 
-  case class LCons(l: LeftList, x: BigInt) extends LeftList
-  case class LNil() extends LeftList
-  
-  def appendPriv(xs: LCons, ys: BigInt, b: Boolean): (LCons, BigInt) = {   
-    if (b)
-      (LCons(xs, ys), 0)
-    else {      
-      xs.l match {
-        case l @ LCons(_, _) =>
-          val (r, t) = appendPriv(l, ys, b)
-          (r, t + 1)
-        case _ => 
-          (xs, 0)       
-      }
-    }
-  } ensuring (res => res._2 <= lsize(xs) - lsize(res._1))
-  
-  def lsize(l: LeftList) : BigInt = {
-    l match {
-      case LCons(l, r) => lsize(l) + 1
-      case _ => 1        
-    }
-  } ensuring(_ >= 0) 
-      
-  def appendAssocInst2[T](xs: Conc[T], ys: Conc[T]) : Boolean = {
+  @library
+  def appendAssocInst2[T](xs: Conc[T], ys: Conc[T]): Boolean = {
     xs match {
       case CC(l, r) =>
         appendAssoc(l.toList, r.toList, ys.toList)
       case Append(l, r) =>
         appendAssoc(l.toList, r.toList, ys.toList)
       case _ => true
-    }    
+    }
   }.holds
-  
-  def numTrees[T](t: Conc[T]) : BigInt = {
+
+  /**
+   * A class that represents an operation on a concTree.
+   * opid - an integer that denotes the function that has to be performed e.g. append, insert, update ...
+   * 		opid <= 0 => the operation is lookup
+   *   		opid == 1 => the operation is update
+   *     	opid == 2 => the operation is insert
+   *      	opid == 3 => the operation is split
+   *        opid >= 4 => the operation is append
+   * index, x - denote the arguments the function given by opid
+   */
+  case class Operation[T](opid: BigInt, /*argument to the operations*/ index: BigInt /*for lookup, update, insert, split*/ ,
+    x: T /*for update, insert, append*/ )
+
+  /**
+   * Proving amortized running time of 'Append' when used ephimerally.
+   * ops- a arbitrary sequence of operations,
+   * noaps - number of append operations in the list
+   * nops - number  of non-append operations in the list
+   */
+  def performOperations[T](xs: Conc[T], ops: List[Operation[T]], noaps: BigInt, nops: BigInt): (Conc[T], BigInt) = {
+    require(xs.valid &&
+      noaps + nops == ops.size) //not strictly necessary
+    ops match {
+      case Cons(Operation(id, i, _), tail) if id <= 0 =>
+        //we need to perform a lookup operation
+        val t1 = if (0 <= i && i < xs.size) //do the operation only if its precondition holds
+          lookup(xs, i)._2
+        else BigInt(0)
+        val (r, t2) = performOperations(xs, tail, noaps, nops - 1)
+        (r, t1 + t2) //total time = time taken by this operation + time taken by the remaining operations 
+
+      case Cons(Operation(id, i, x), tail) if id == 1 =>
+        val (newt, t1) = if (0 <= i && i < xs.size)
+          update(xs, i, x)
+        else (xs, BigInt(0))
+        //note that only the return value is used by the subsequent operations (emphimeral use)
+        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
+        (r, t1 + t2)
+
+      case Cons(Operation(id, i, x), tail) if id == 2 =>
+        val (normt, t0) = normalize(xs)
+        val (newt, t1) = if (0 <= i && i <= xs.size) //note here normt.size is used, but it should be same as xs.size
+          insert(normt, i, x)
+        else (xs, BigInt(0))
+        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
+        (r, t0 + t1 + t2)
+
+      case Cons(Operation(id, n, _), tail) if id == 3 =>
+        //here we use the larger tree to perform the remaining operations
+        val (normt, t0) = normalize(xs)
+        val (newl, newr, t1) = split(normt, n)
+        val newt = if (newl.size >= newr.size) newl else newr
+        val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
+        (r, t0 + t1 + t2)
+
+      case Cons(Operation(id, _, x), tail) =>
+        //here, we need to perform append operation
+        val (newt, t1) = append(xs, x)
+        val (r, t2) = performOperations(newt, tail, noaps - 1, nops)
+        (r, t1 + t2)
+
+      case Nil() =>
+        (xs, 0)
+    }
+  }
+
+  @library
+  def numTrees[T](t: Conc[T]): BigInt = {
     t match {
       case Append(l, r) => numTrees(l) + 1
-      case _ => 1        
+      case _ => BigInt(1)
     }
-  } ensuring(_ >= 0)  
+  } ensuring (res => res >= 0)
 }
