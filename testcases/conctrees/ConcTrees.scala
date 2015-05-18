@@ -189,6 +189,7 @@ object ConcTrees {
     res._1.valid && // tree invariants are preserved
     res._2 <= xs.level && // update time is linear in the height of the tree
     res._1.toList == xs.toList.updated(i, y) && // correctness
+    numTrees(res._1) == numTrees(xs) && //auxiliary property that preserves the potential function 
     instAppendUpdateAxiom(xs, i, y)) // an auxiliary axiom instantiation
 
   @library
@@ -203,7 +204,7 @@ object ConcTrees {
     }
   }.holds
 
-  @library
+  //@library
   def normalize[T](t: Conc[T]): (Conc[T], BigInt) = {
     require(t.valid)
     t match {
@@ -215,11 +216,12 @@ object ConcTrees {
   } ensuring (res => res._1.valid &&
     res._1.isNormalized &&
     res._1.toList == t.toList && //correctness
-    res._1.size == t.size) //other auxiliary properties
+    res._1.size == t.size && res._1.level == t.level) //normalize preseves level and size
 
-  @library
+  //@library
   def wrap[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
-    require(xs.valid && ys.valid && ys.isNormalized)
+    require(xs.valid && ys.valid && ys.isNormalized && 
+        xs.level > ys.level)
     xs match {
       case Append(l, r) =>
         val (nr, t) = concatNormalized(r, ys)
@@ -231,7 +233,8 @@ object ConcTrees {
   } ensuring (res => res._1.valid &&
     res._1.isNormalized &&
     res._1.toList == xs.toList ++ ys.toList && //correctness
-    res._1.size == xs.size + ys.size && //other auxiliary propertiess
+    res._1.size == xs.size + ys.size && //other auxiliary properties
+    res._1.level <= max(xs.level, ys.level) + 1 &&
     appendAssocInst2(xs, ys)) //some lemma instantiations
 
   /**
@@ -496,6 +499,14 @@ object ConcTrees {
     }
   }.holds
 
+  @library
+  def numTrees[T](t: Conc[T]): BigInt = {
+    t match {
+      case Append(l, r) => numTrees(l) + 1
+      case _ => BigInt(1)
+    }
+  } ensuring (res => res >= 0)
+
   /**
    * A class that represents an operation on a concTree.
    * opid - an integer that denotes the function that has to be performed e.g. append, insert, update ...
@@ -537,7 +548,7 @@ object ConcTrees {
 
       case Cons(Operation(id, i, x), tail) if id == 2 =>
         val (normt, t0) = normalize(xs)
-        val (newt, t1) = if (0 <= i && i <= xs.size) //note here normt.size is used, but it should be same as xs.size
+        val (newt, t1) = if (0 <= i && i <= xs.size)
           insert(normt, i, x)
         else (xs, BigInt(0))
         val (r, t2) = performOperations(newt, tail, noaps, nops - 1)
@@ -561,12 +572,4 @@ object ConcTrees {
         (xs, 0)
     }
   }
-
-  @library
-  def numTrees[T](t: Conc[T]): BigInt = {
-    t match {
-      case Append(l, r) => numTrees(l) + 1
-      case _ => BigInt(1)
-    }
-  } ensuring (res => res >= 0)
 }
