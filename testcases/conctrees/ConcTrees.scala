@@ -220,8 +220,9 @@ object ConcTrees {
 
   //@library
   def wrap[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
-    require(xs.valid && ys.valid && ys.isNormalized && 
-        xs.level > ys.level)
+    require(xs.valid && ys.valid && ys.isNormalized)
+    	/*&& 
+        xs.level > ys.level)*/
     xs match {
       case Append(l, r) =>
         val (nr, t) = concatNormalized(r, ys)
