@@ -29,15 +29,7 @@ object ConcTrees {
     }
 
     def valid: Boolean = {
-      concInv && balanced && appendInv
-      /*(this match { //validity should hold for sub-structures
-          case Empty() => true
-          case Single(_) => true
-          case CC(l, r) =>
-            l.valid && r.valid
-          case Append(l, r) =>
-            l.valid && r.valid
-        })*/
+      concInv && balanced && appendInv    
     }
 
     /**
@@ -540,22 +532,21 @@ object ConcTrees {
         //we need to perform a lookup operation, but do the operation only if 
         //preconditions hold
         val _ = if (0 <= i && i < xs.size)
-          lookup(xs, i)._2
-        else
-          BigInt(0)
+        			lookup(xs, i)._2
+        		else BigInt(0)
         performOperations(xs, tail, noaps) //returns the time taken by appends in the remaining operations
          
       case Cons(Operation(id, i, x), tail) if id == 1 =>
         val newt = if (0 <= i && i < xs.size)
-          update(xs, i, x)._1
-        else xs
+        			update(xs, i, x)._1
+        		   else xs
         //note that only the return value is used by the subsequent operations (emphimeral use)
         performOperations(newt, tail, noaps)        
 
       case Cons(Operation(id, i, x), tail) if id == 2 =>         
         val newt = if (0 <= i && i <= xs.size)
-          insert(normalize(xs)._1, i, x)._1
-        else xs
+        			insert(normalize(xs)._1, i, x)._1
+        		   else xs
         performOperations(newt, tail, noaps)
 
       case Cons(Operation(id, n, _), tail) if id == 3 =>
@@ -570,8 +561,7 @@ object ConcTrees {
         val (r, t2) = performOperations(newt, tail, noaps - 1)
         (r, t1 + t2) //time taken by this append and those that follow it
 
-      case _ =>
-        //here, there is some precondition violation
+      case _ =>       
         (xs, 0)
     }
   } ensuring (res => res._2 <= noaps + numTrees(xs)) 
