@@ -23,5 +23,5 @@ object Testcase {
       case LCons(l, r) => lsize(l) + 1
       case _ => 0        
     }
-  } ensuring(_ >= 0)  
+  } ensuring(_ >= 1)  
 }
