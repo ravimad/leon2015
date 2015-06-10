@@ -231,7 +231,7 @@ object ConcTrees {
     res._1.isNormalized //auxiliary properties    
     )
 
-  @library
+  //@library
   def concatNonEmpty[T](xs: Conc[T], ys: Conc[T]): (Conc[T], BigInt) = {
     require(xs.valid && ys.valid &&
       xs.isNormalized && ys.isNormalized &&
