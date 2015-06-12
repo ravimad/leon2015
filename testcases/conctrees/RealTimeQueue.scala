@@ -48,7 +48,6 @@ object RealTimeQueue {
     def rotateInv: Boolean = {
       this match {
         case rs @ RotateStream(f, r, a) =>
-          //f.isEval(cache) && a.isCons &&
           f.isConcrete && a.isConcrete && //arguments to rotate are concrete.
             f.rotateInv && a.rotateInv
         case SCons(_, tail) =>
@@ -75,7 +74,6 @@ object RealTimeQueue {
     }
 
     def firstLazyClosure: Stream[T] = {
-      require(this.valid) //is this required ?
       this match {
         case SCons(_, tail) =>
           tail.firstLazyClosure
@@ -99,7 +97,7 @@ object RealTimeQueue {
         !res || suffix(t)
       case _ => true
     })
-    
+
   }
   case class SCons[T](x: T, tail: Stream[T]) extends Stream[T] //this is a concrete constructor
   case class SNil[T]() extends Stream[T]
@@ -107,21 +105,25 @@ object RealTimeQueue {
   //the values of the stream are not directly available and should be obtained by further processing.
   //In some sense, this represents the closure corresponding to rotate.		  	
 
+  def streamScheduleProperty[T](s: Stream[T], sch: Stream[T]) = {
+    s.valid && sch.valid &&
+      s.firstLazyClosure == sch.firstLazyClosure && //first lazy closure property is preserved
+      s.suffix(sch) //sch is a suffix of s
+  }
+  
   case class Queue[T](f: Stream[T], r: List[T], s: Stream[T]) {
     def isEmpty = f.isEmpty
 
     def valid = {
-      f.valid && s.valid &&
-        (f.firstLazyClosure == s.firstLazyClosure) &&
-        f.suffix(s) && //s is a suffix of f
-        s.size == f.size - r.size //invariant: |s| = |f| - |r|
+      streamScheduleProperty(f, s) &&
+      	s.size == f.size - r.size //invariant: |s| = |f| - |r|
     }
-  }
+  }  
 
   def rotate[T](f: Stream[T], r: List[T], a: Stream[T]): (SCons[T], BigInt) = {
     require(f.isConcrete && a.isConcrete && // 'f' and 'a' are concretized              
       r.size == f.size + 1) // size invariant between 'f' and 'r' holds      
-      
+
     (f, r) match {
       case (SNil(), Cons(y, _)) => //in this case 'y' is the only element in 'r'
         (SCons[T](y, a), 1)
@@ -141,17 +143,13 @@ object RealTimeQueue {
    * the target of 'rs'.
    */
   def materialize[T](mats: RotateStream[T], s: Stream[T]): (SCons[T], Stream[T], BigInt) = {
-    require(mats.valid && s.valid &&
-      s.suffix(mats) &&
-      s.firstLazyClosure == mats)
+    require(streamScheduleProperty(s, mats))
 
     val (matres, matt) = rotate(mats.f, mats.r, mats.a)
     (matres, updateReferences(s, mats), matt + 1)
 
-  } ensuring (res => res._1.valid && res._2.valid &&
-    res._3 <= 2 && //time taken is bounded by executing rotate    
-    res._2.firstLazyClosure == res._1.firstLazyClosure && //first lazy closure property is preserved
-    res._2.suffix(res._1) && //suffix is preserved   
+  } ensuring (res => streamScheduleProperty(res._2, res._1) &&
+    res._3 <= 2 && //time taken is bounded by executing rotate          
     res._1.size == mats.size && res._2.size == s.size && //sizes are preserved    
     res._1.isCons //auxiliary invariants
     )
@@ -160,9 +158,7 @@ object RealTimeQueue {
    * This does not take any time, by the definition of laziness
    */
   def updateReferences[T](s: Stream[T], mats: RotateStream[T]): Stream[T] = {
-    require(s.valid && mats.valid &&
-      s.suffix(mats) &&
-      s.firstLazyClosure == mats)
+    require(streamScheduleProperty(s, mats))   
     s match {
       //go into every case of 'f' and update the structure
       case RotateStream(f, r, a) =>
@@ -178,17 +174,13 @@ object RealTimeQueue {
       case SNil() => //here rs is not found, so the structure  remains the same
         s
     }
-  } ensuring (res => res.valid &&
+  } ensuring (res => streamScheduleProperty(res, rotate(mats.f, mats.r, mats.a)._1) &&
     res.size == s.size &&
-    (!s.isConcrete || res.isConcrete) && //concreteness is preserved.       
-    res.firstLazyClosure == rotate(mats.f, mats.r, mats.a)._1.firstLazyClosure && //first lazy closure property is preserved
-    res.suffix(rotate(mats.f, mats.r, mats.a)._1) //suffix is preserved        
-    )  
+    (!s.isConcrete || res.isConcrete) //concreteness is preserved.       
+    )
 
   def createQueue[T](f: Stream[T], r: List[T], sch: Stream[T]): (Queue[T], BigInt) = {
-    require(f.valid && sch.valid &&
-      f.firstLazyClosure == sch.firstLazyClosure && //note: we only need the first lazy closures to be equal
-      f.suffix(sch) &&     
+    require(streamScheduleProperty(f, sch) &&
       sch.size == f.size - r.size + 1) //size invariant holds 
     sch match {
       case rs: RotateStream[T] =>
@@ -218,16 +210,16 @@ object RealTimeQueue {
         q.s match {
           case SCons(_, st) => //here, the precondition of createQueue (reg. suffix property) may get violated,             
             // so it is handled specially here.
-          	(Queue(nf, q.r, st), 1)            
-          case _ => 
-          	val (res, tq) = createQueue(nf, q.r, q.s)
-          	(res, tq + 1)
+            (Queue(nf, q.r, st), 1)
+          case _ =>
+            val (res, tq) = createQueue(nf, q.r, q.s)
+            (res, tq + 1)
         }
       case RotateStream(_, _, _) => //here, 'q.f' is not yet materialized, materialize it and return the new queue
         //here, q.s and f are equal
-        val rs@RotateStream(_, _, _) = q.s
-        val (SCons(_, s1), SCons(_, nf), tc) = materialize(rs, q.f) 
-        (Queue(nf, q.r, s1), tc + 1)        
+        val rs @ RotateStream(_, _, _) = q.s
+        val (SCons(_, s1), SCons(_, nf), tc) = materialize(rs, q.f)
+        (Queue(nf, q.r, s1), tc + 1)
     }
-  } ensuring(res => res._1.valid && res._2 <= 4)
+  } ensuring (res => res._1.valid && res._2 <= 4)
 }
