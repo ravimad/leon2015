@@ -73,6 +73,33 @@ object RealTimeQueue {
     def valid: Boolean = {
       rotateInv && sizeInv
     }
+
+    def firstLazyClosure: Stream[T] = {
+      require(this.valid) //is this required ?
+      this match {
+        case SCons(_, tail) =>
+          tail.firstLazyClosure
+        case _ =>
+          this
+      }
+    } ensuring (res => !res.isCons &&
+      (!res.isEmpty || this.isConcrete)) //if there are no lazy closures then the stream is concrete
+
+    def suffix(sch: Stream[T]): Boolean = { //checks if sch is a suffix of 'f'
+      (this == sch) || {
+        this match {
+          case SCons(_, t) =>
+            t.suffix(sch)
+          case _ =>
+            false
+        }
+      }
+    } ensuring (res => sch match {
+      case SCons(_, t) =>
+        !res || suffix(t)
+      case _ => true
+    })
+    
   }
   case class SCons[T](x: T, tail: Stream[T]) extends Stream[T] //this is a concrete constructor
   case class SNil[T]() extends Stream[T]
@@ -82,15 +109,19 @@ object RealTimeQueue {
 
   case class Queue[T](f: Stream[T], r: List[T], s: Stream[T]) {
     def isEmpty = f.isEmpty
-  }
-  //invariant: |s| = |f| - |r|, and |s| >= 0
 
-  /**
-   * Here, 'cache' is the set of streams that have a concrete constructor
-   */
+    def valid = {
+      f.valid && s.valid &&
+        (f.firstLazyClosure == s.firstLazyClosure) &&
+        f.suffix(s) && //s is a suffix of f
+        s.size == f.size - r.size //invariant: |s| = |f| - |r|
+    }
+  }
+
   def rotate[T](f: Stream[T], r: List[T], a: Stream[T]): (SCons[T], BigInt) = {
     require(f.isConcrete && a.isConcrete && // 'f' and 'a' are concretized              
-      r.size == f.size + 1) // size invariant between 'f' and 'r' holds 
+      r.size == f.size + 1) // size invariant between 'f' and 'r' holds      
+      
     (f, r) match {
       case (SNil(), Cons(y, _)) => //in this case 'y' is the only element in 'r'
         (SCons[T](y, a), 1)
@@ -111,19 +142,17 @@ object RealTimeQueue {
    */
   def materialize[T](mats: RotateStream[T], s: Stream[T]): (SCons[T], Stream[T], BigInt) = {
     require(mats.valid && s.valid &&
-      suffix(s, mats) &&
-      firstLazyClosure(s) == mats)
+      s.suffix(mats) &&
+      s.firstLazyClosure == mats)
 
     val (matres, matt) = rotate(mats.f, mats.r, mats.a)
     (matres, updateReferences(s, mats), matt + 1)
 
   } ensuring (res => res._1.valid && res._2.valid &&
     res._3 <= 2 && //time taken is bounded by executing rotate    
-    firstLazyClosure(res._2) == firstLazyClosure(res._1) && //first lazy closure property is preserved
-    suffix(res._2, res._1) && //proper suffix is preserved
-    (res._2.isCons || res._2.isEmpty) &&
-    res._1.size == mats.size && res._2.size == s.size && //sizes are preserved
-    //(!s.isCons || res._2.isCons) && // if the first element of 's' is cons, so is res._2 
+    res._2.firstLazyClosure == res._1.firstLazyClosure && //first lazy closure property is preserved
+    res._2.suffix(res._1) && //suffix is preserved   
+    res._1.size == mats.size && res._2.size == s.size && //sizes are preserved    
     res._1.isCons //auxiliary invariants
     )
 
@@ -132,8 +161,8 @@ object RealTimeQueue {
    */
   def updateReferences[T](s: Stream[T], mats: RotateStream[T]): Stream[T] = {
     require(s.valid && mats.valid &&
-      suffix(s, mats) &&
-      firstLazyClosure(s) == mats)
+      s.suffix(mats) &&
+      s.firstLazyClosure == mats)
     s match {
       //go into every case of 'f' and update the structure
       case RotateStream(f, r, a) =>
@@ -152,48 +181,14 @@ object RealTimeQueue {
   } ensuring (res => res.valid &&
     res.size == s.size &&
     (!s.isConcrete || res.isConcrete) && //concreteness is preserved.       
-    firstLazyClosure(res) == firstLazyClosure(rotate(mats.f, mats.r, mats.a)._1) && //first lazy closure property is preserved
-    suffix(res, rotate(mats.f, mats.r, mats.a)._1) && //proper suffix is preserved
-    (res.isCons || res.isEmpty) //result is cons, when the firstLazy property holds      
-    )
-    
-  def firstLazyClosure[T](f: Stream[T]): Stream[T] = {
-    require(f.valid)
-    f match {
-      case SCons(_, tail) =>
-        firstLazyClosure(tail)
-      case _ =>
-        f
-    }
-  } ensuring (res => !res.isCons &&
-    (!res.isEmpty || f.isConcrete)) //if there are no lazy closures then the stream is concrete
-
-  def suffix[T](f: Stream[T], sch: Stream[T]): Boolean = {
-    (f == sch) || {
-      f match {
-        case SCons(_, t) =>
-          suffix(t, sch)
-        case _ =>
-          false
-      }
-    }
-  } ensuring(res => sch match {
-    case SCons(_, t) => 
-      !res || suffix(f, t)
-    case _ => true
-  })
-
-  def queueInvariant[T](q: Queue[T]) = {
-    q.f.valid && q.s.valid &&
-      (firstLazyClosure(q.f) == firstLazyClosure(q.s)) &&     
-      (suffix(q.f, q.s)) &&
-      q.s.size == q.f.size - q.r.size
-  }
+    res.firstLazyClosure == rotate(mats.f, mats.r, mats.a)._1.firstLazyClosure && //first lazy closure property is preserved
+    res.suffix(rotate(mats.f, mats.r, mats.a)._1) //suffix is preserved        
+    )  
 
   def createQueue[T](f: Stream[T], r: List[T], sch: Stream[T]): (Queue[T], BigInt) = {
     require(f.valid && sch.valid &&
-      firstLazyClosure(f) == firstLazyClosure(sch) && //note: we only need the first lazy closures to be equal
-      suffix(f, sch) &&     
+      f.firstLazyClosure == sch.firstLazyClosure && //note: we only need the first lazy closures to be equal
+      f.suffix(sch) &&     
       sch.size == f.size - r.size + 1) //size invariant holds 
     sch match {
       case rs: RotateStream[T] =>
@@ -207,18 +202,17 @@ object RealTimeQueue {
         val (rotres, tr) = rotate(f, r, SNil[T]())
         (Queue(rotres, Nil[T](), rotres), tr + 1)
     }
-  } ensuring (res => queueInvariant(res._1) &&
-    res._2 <= 3) //time bounds 
+  } ensuring (res => res._1.valid && res._2 <= 3) //time bounds 
 
   def enqueue[T](x: T, q: Queue[T]): (Queue[T], BigInt) = {
-    require(queueInvariant(q))
+    require(q.valid)
 
     val (res, t) = createQueue(q.f, Cons[T](x, q.r), q.s)
     (res, t + 1)
-  } ensuring (res => queueInvariant(res._1) && res._2 <= 4)
+  } ensuring (res => res._1.valid && res._2 <= 4)
 
   def dequeue[T](q: Queue[T]): (Queue[T], BigInt) = {
-    require(!q.isEmpty && queueInvariant(q))
+    require(!q.isEmpty && q.valid)
     q.f match {
       case SCons(x, nf) =>
         q.s match {
@@ -235,5 +229,5 @@ object RealTimeQueue {
         val (SCons(_, s1), SCons(_, nf), tc) = materialize(rs, q.f) 
         (Queue(nf, q.r, s1), tc + 1)        
     }
-  } ensuring(res => queueInvariant(res._1) && res._2 <= 4)
+  } ensuring(res => res._1.valid && res._2 <= 4)
 }
