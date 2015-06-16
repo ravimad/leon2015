@@ -299,7 +299,7 @@ trait CodeGeneration {
         mkUnbox(bs(i - 1), ch)
 
       // Sets
-      case FiniteSet(es) =>
+      case FiniteSet(es, _) =>
         ch << DefaultNew(SetClass)
         for(e <- es) {
           ch << DUP
@@ -337,7 +337,7 @@ trait CodeGeneration {
         ch << InvokeVirtual(SetClass, "minus", s"(L$SetClass;)L$SetClass;")
 
       // Maps
-      case FiniteMap(ss) =>
+      case FiniteMap(ss, _, _) =>
         ch << DefaultNew(MapClass)
         for((f,t) <- ss) {
           ch << DUP
@@ -546,6 +546,7 @@ trait CodeGeneration {
 
       case l @ Lambda(args, body) =>
         val afName = "Leon$CodeGen$Lambda$" + CompilationUnit.nextLambdaId
+        lambdas += afName -> l
 
         val cf = new ClassFile(afName, Some(LambdaClass))
 
@@ -590,7 +591,6 @@ trait CodeGeneration {
         }
 
         locally {
-          val argTypes = args.map(arg => typeToJVM(arg.getType))
 
           val apm = cf.addMethod("Ljava/lang/Object;", "apply", "[Ljava/lang/Object;")
 
@@ -644,6 +644,11 @@ trait CodeGeneration {
         mkExpr(r, ch)
         ch << InvokeVirtual(BigIntClass, "div", s"(L$BigIntClass;)L$BigIntClass;")
 
+      case Remainder(l, r) =>
+        mkExpr(l, ch)
+        mkExpr(r, ch)
+        ch << InvokeVirtual(BigIntClass, "rem", s"(L$BigIntClass;)L$BigIntClass;")
+
       case Modulo(l, r) =>
         mkExpr(l, ch)
         mkExpr(r, ch)
@@ -674,7 +679,7 @@ trait CodeGeneration {
         mkExpr(r, ch)
         ch << IDIV
 
-      case BVModulo(l, r) =>
+      case BVRemainder(l, r) =>
         mkExpr(l, ch)
         mkExpr(r, ch)
         ch << IREM
@@ -976,7 +981,7 @@ trait CodeGeneration {
         mkExpr(l, ch)
         mkExpr(r, ch)
         l.getType match {
-          case Int32Type =>
+          case Int32Type | CharType =>
             ch << If_ICmpLt(thenn) << Goto(elze) 
           case IntegerType =>
             ch << InvokeVirtual(BigIntClass, "lessThan", s"(L$BigIntClass;)Z")
@@ -987,7 +992,7 @@ trait CodeGeneration {
         mkExpr(l, ch)
         mkExpr(r, ch)
         l.getType match {
-          case Int32Type =>
+          case Int32Type | CharType =>
             ch << If_ICmpGt(thenn) << Goto(elze) 
           case IntegerType =>
             ch << InvokeVirtual(BigIntClass, "greaterThan", s"(L$BigIntClass;)Z")
@@ -998,7 +1003,7 @@ trait CodeGeneration {
         mkExpr(l, ch)
         mkExpr(r, ch)
         l.getType match {
-          case Int32Type =>
+          case Int32Type | CharType =>
             ch << If_ICmpLe(thenn) << Goto(elze) 
           case IntegerType =>
             ch << InvokeVirtual(BigIntClass, "lessEquals", s"(L$BigIntClass;)Z")
@@ -1009,7 +1014,7 @@ trait CodeGeneration {
         mkExpr(l, ch)
         mkExpr(r, ch)
         l.getType match {
-          case Int32Type =>
+          case Int32Type | CharType =>
             ch << If_ICmpGe(thenn) << Goto(elze) 
           case IntegerType =>
             ch << InvokeVirtual(BigIntClass, "greaterEquals", s"(L$BigIntClass;)Z")

@@ -82,7 +82,7 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
     val result = checkCompSuccess(evaluator, in)
 
     def asIntSet(e : Expr) : Option[Set[Int]] = e match {
-      case FiniteSet(es) =>
+      case FiniteSet(es, _) =>
         val ois = es.map {
           case IntLiteral(v) => Some(v)
           case _ => None
@@ -107,7 +107,7 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
     val result = checkCompSuccess(evaluator, in)
 
     def asIntMap(e : Expr) : Option[Map[Int,Int]] = e match {
-      case FiniteMap(ss) =>
+      case FiniteMap(ss, _, _) =>
         val oips : Seq[Option[(Int,Int)]] = ss.map {
           case (IntLiteral(f), IntLiteral(t)) => Some(f -> t)
           case _ => None
@@ -158,9 +158,9 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
     }
   }
 
-  private def T = BooleanLiteral(true)
-  private def F = BooleanLiteral(false)
-  private def IL(i : Int) = IntLiteral(i)
+  private val T = BooleanLiteral(true)
+  private val F = BooleanLiteral(false)
+  import purescala.Expressions.{IntLiteral => IL, InfiniteIntegerLiteral => BIL}
 
   test("Arithmetic") {
     val p = """|object Program {
@@ -174,7 +174,7 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
                |    if(s > n) c else intSqrt0(n, c+1)
                |  }
                |  def div(x : Int, y : Int) : Int = (x / y)
-               |  def mod(x : Int, y : Int) : Int = (x % y)
+               |  def rem(x : Int, y : Int) : Int = (x % y)
                |}
                |""".stripMargin
 
@@ -191,14 +191,63 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
       checkComp(e, mkCall("div", IL(7), IL(-5)), IL(-1))
       checkComp(e, mkCall("div", IL(-7), IL(5)), IL(-1))
       checkComp(e, mkCall("div", IL(-7), IL(-5)), IL(1))
-      checkComp(e, mkCall("mod", IL(7), IL(5)), IL(2))
-      checkComp(e, mkCall("mod", IL(7), IL(-5)), IL(2))
-      checkComp(e, mkCall("mod", IL(-7), IL(5)), IL(-2))
-      checkComp(e, mkCall("mod", IL(-7), IL(-5)), IL(-2))
+      checkComp(e, mkCall("rem", IL(7), IL(5)), IL(2))
+      checkComp(e, mkCall("rem", IL(7), IL(-5)), IL(2))
+      checkComp(e, mkCall("rem", IL(-7), IL(5)), IL(-2))
+      checkComp(e, mkCall("rem", IL(-7), IL(-5)), IL(-2))
+      checkComp(e, mkCall("rem", IL(-1), IL(5)), IL(-1))
 
       // Things that should crash.
       checkError(e, mkCall("div", IL(42), IL(0))) 
-      checkError(e, mkCall("mod", IL(42), IL(0)))
+      checkError(e, mkCall("rem", IL(42), IL(0)))
+    }
+  }
+
+  test("BigInt Arithmetic") {
+    val p = """|object Program {
+               |  def plus(x : BigInt, y : BigInt) : BigInt = x + y
+               |  def max(x : BigInt, y : BigInt) : BigInt = if(x >= y) x else y
+               |  def square(i : BigInt) : BigInt = { val j = i; j * i }
+               |  def abs(i : BigInt) : BigInt = if(i < 0) -i else i
+               |  def intSqrt(n : BigInt) : BigInt = intSqrt0(abs(n), 0)
+               |  def intSqrt0(n : BigInt, c : BigInt) : BigInt = {
+               |    val s = square(c+1)
+               |    if(s > n) c else intSqrt0(n, c+1)
+               |  }
+               |  def div(x : BigInt, y : BigInt) : BigInt = (x / y)
+               |  def rem(x : BigInt, y : BigInt) : BigInt = (x % y)
+               |  def mod(x : BigInt, y : BigInt) : BigInt = (x mod y)
+               |}
+               |""".stripMargin
+
+    implicit val prog = parseString(p)
+    val evaluators = prepareEvaluators
+
+    for(e <- evaluators) {
+      // Some simple math.
+      checkComp(e, mkCall("plus", BIL(60), UMinus(BIL(18))), BIL(42))
+      checkComp(e, mkCall("max", BIL(4), BIL(42)), BIL(42))
+      checkComp(e, mkCall("max", BIL(42), UMinus(BIL(42))), BIL(42))
+      checkComp(e, mkCall("intSqrt", UMinus(BIL(1800))), BIL(42))
+      checkComp(e, mkCall("div", BIL(7), BIL(5)), BIL(1))
+      checkComp(e, mkCall("div", BIL(7), BIL(-5)), BIL(-1))
+      checkComp(e, mkCall("div", BIL(-7), BIL(5)), BIL(-1))
+      checkComp(e, mkCall("div", BIL(-7), BIL(-5)), BIL(1))
+      checkComp(e, mkCall("rem", BIL(7), BIL(5)), BIL(2))
+      checkComp(e, mkCall("rem", BIL(7), BIL(-5)), BIL(2))
+      checkComp(e, mkCall("rem", BIL(-7), BIL(5)), BIL(-2))
+      checkComp(e, mkCall("rem", BIL(-7), BIL(-5)), BIL(-2))
+      checkComp(e, mkCall("rem", BIL(-1), BIL(5)), BIL(-1))
+      checkComp(e, mkCall("mod", BIL(7), BIL(5)), BIL(2))
+      checkComp(e, mkCall("mod", BIL(7), BIL(-5)), BIL(2))
+      checkComp(e, mkCall("mod", BIL(-7), BIL(5)), BIL(3))
+      checkComp(e, mkCall("mod", BIL(-7), BIL(-5)), BIL(3))
+      checkComp(e, mkCall("mod", BIL(-1), BIL(5)), BIL(4))
+
+      // Things that should crash.
+      checkError(e, mkCall("div", BIL(42), BIL(0))) 
+      checkError(e, mkCall("rem", BIL(42), BIL(0)))
+      checkError(e, mkCall("mod", BIL(42), BIL(0)))
     }
   }
 
@@ -322,8 +371,8 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
     val nil = mkCaseClass("Nil")
     val cons12 = mkCaseClass("Cons", IL(1), mkCaseClass("Cons", IL(2), mkCaseClass("Nil")))
 
-    val s123 = NonemptySet(Set(IL(1), IL(2), IL(3)))
-    val s246 = NonemptySet(Set(IL(2), IL(4), IL(6)))
+    val s123 = FiniteSet(Set(IL(1), IL(2), IL(3)), Int32Type)
+    val s246 = FiniteSet(Set(IL(2), IL(4), IL(6)), Int32Type)
 
     for(e <- evaluators) {
       checkSetComp(e, mkCall("finite"), Set(1, 2, 3))
@@ -538,6 +587,42 @@ class EvaluatorsTests extends leon.test.LeonTestSuite {
       checkComp(e, mkCall("f4"), IL(1))
       checkComp(e, mkCall("f5"), IL(1))
       checkComp(e, mkCall("f6"), IL(1))
+    }
+  }
+
+  test("Lambda functions") {
+    val p = """import leon.lang._
+              |object Program {
+              |  val foo1 = (x: BigInt) => x
+              |  val foo2 = {
+              |    val a = BigInt(1)
+              |    (x: BigInt) => a + x
+              |  }
+              |  val foo3 = {
+              |    val f1 = (x: BigInt) => x + 1
+              |    val f2 = (x: BigInt) => x + 2
+              |    (x: BigInt, y: BigInt) => f1(x) + f2(y)
+              |  }
+              |  def foo4(x: BigInt) = (i: BigInt) => i + x
+              |}""".stripMargin
+
+    implicit val prog = parseString(p)
+    val evaluators = prepareEvaluators
+
+    def checkLambda(evaluator: Evaluator, in: Expr, out: PartialFunction[Expr, Boolean]) {
+      val result = checkCompSuccess(evaluator, in)
+      if (!out.isDefinedAt(result) || !out(result))
+        throw new AssertionError(s"Evaluation of '$in' with evaluator '${evaluator.name}' produced invalid '$result'.")
+    }
+
+    val ONE = BIL(1)
+    val TWO = BIL(2)
+
+    for(e <- evaluators) {
+      checkLambda(e, mkCall("foo1"), { case Lambda(Seq(vd), Variable(id)) if vd.id == id => true })
+      checkLambda(e, mkCall("foo2"), { case Lambda(Seq(vd), Plus(ONE, Variable(id))) if vd.id == id => true })
+      checkLambda(e, mkCall("foo3"), { case Lambda(Seq(vx, vy), Plus(Plus(Variable(x), ONE), Plus(Variable(y), TWO))) if vx.id == x && vy.id == y => true })
+      checkLambda(e, mkCall("foo4", TWO), { case Lambda(Seq(vd), Plus(Variable(id), TWO)) if vd.id == id => true })
     }
   }
 }

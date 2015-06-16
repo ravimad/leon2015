@@ -77,7 +77,10 @@ class InductionTactic(vctx: VerificationContext) extends DefaultTactic(vctx) {
 
               val vc = implies(and(CaseClassInstanceOf(cct, arg.toVariable), precOrTrue(fd), path), implies(andJoin(subCases), replace((tfd.params.map(_.toVariable) zip args).toMap, pre)))
 
-              VC(vc, fd, VCKinds.Info(VCKinds.Precondition, "call $fi, ind. on $arg / ${cct.classDef.id}"), this).setPos(fi)
+              // Crop the call to display it properly
+              val fiS = sizeLimit(fi.toString, 25)
+
+              VC(vc, fd, VCKinds.Info(VCKinds.Precondition, s"call $fiS, ind. on ($arg : ${cct.classDef.id})"), this).setPos(fi)
             }
         }
 

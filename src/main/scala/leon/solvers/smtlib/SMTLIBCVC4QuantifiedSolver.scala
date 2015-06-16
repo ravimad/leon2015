@@ -5,11 +5,13 @@ package solvers.smtlib
 
 import purescala._
 import Expressions._
-import Definitions.{Program, TypedFunDef}
-import Constructors.{application, implies}
+import ExprOps._
+import Definitions._
+import Constructors._
 import DefOps.typedTransitiveCallees
-import smtlib.parser.Commands.{Assert => SMTAssert, _}
-import smtlib.parser.Terms._
+import leon.verification.VC
+import smtlib.parser.Commands.{Assert => SMTAssert, FunDef => _, _}
+import smtlib.parser.Terms.{Exists => SMTExists, ForAll => SMTForall, _ }
 import smtlib.theories.Core.Equals
 
 // This solver utilizes the define-funs-rec command of SMTLIB-2.5 to define mutually recursive functions.
@@ -17,6 +19,13 @@ import smtlib.theories.Core.Equals
 abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program) extends SMTLIBCVC4Solver(context, program) {
 
   override def targetName = "cvc4-quantified"
+  
+  private var currentFunDef: Option[FunDef] = None
+  def refersToCurrent(fd: FunDef) = {
+    (currentFunDef contains fd) || (currentFunDef exists {
+      program.callGraph.transitivelyCalls(fd, _)
+    })
+  }
 
   private val typedFunDefExplorationLimit = 10000
 
@@ -30,9 +39,9 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
 
     // define-funs-rec does not accept parameterless functions, so we have to treat them differently:
     // we declare-fun each one and assert it is equal to its body
-    val (withParams, withoutParams) = funs.toSeq partition( _.params.nonEmpty)
+    val (withParams, withoutParams) = funs.toSeq filterNot functions.containsA partition(_.params.nonEmpty)
 
-    val parameterlessAssertions = withoutParams filterNot functions.containsA flatMap { tfd =>
+    val parameterlessAssertions = withoutParams flatMap { tfd =>
       val s = super.declareFunction(tfd)
 
       try {
@@ -54,9 +63,7 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
       }
     }
 
-    val seen = withParams filterNot functions.containsA
-
-    val smtFunDecls = seen map { tfd =>
+    val smtFunDecls = withParams map { tfd =>
       val id = if (tfd.tps.isEmpty) {
         tfd.id
       } else {
@@ -78,7 +85,7 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
           (p.id, id2sym(p.id): Term)
         }.toMap)
       } catch {
-        case i: IllegalArgumentException =>
+        case _: IllegalArgumentException =>
           addError()
           toSMT(Error(tfd.body.get.getType, ""))(Map())
       }
@@ -88,7 +95,9 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
       sendCommand(DefineFunsRec(smtFunDecls, smtBodies))
       // Assert contracts for defined functions
       for {
-        tfd <- seen
+        // If we encounter a function that does not refer to the current function,
+        // it is sound to assume its contracts for all inputs
+        tfd <- withParams if !refersToCurrent(tfd.fd)
         post <- tfd.postcondition
       } {
         val term = implies(
@@ -96,7 +105,7 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
           application(post, Seq(FunctionInvocation(tfd, tfd.params map { _.toVariable})))
         )
         try {
-          sendCommand(SMTAssert(quantifiedTerm(ForAll, term)))
+          sendCommand(SMTAssert(quantifiedTerm(SMTForall, term)))
         } catch {
           case _ : IllegalArgumentException =>
             addError()
@@ -110,13 +119,34 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
 
   }
 
-  // For this solver, we prefer the variables of assert() commands to be exist. quantified instead of free
-  override def assertCnstr(expr: Expr) =
-    try {
-      sendCommand(SMTAssert(quantifiedTerm(Exists, expr)))
-    } catch {
-      case _ : IllegalArgumentException =>
-        addError()
+  private def withInductiveHyp(cond: Expr): Expr = {
+
+    val inductiveHyps = for {
+      fi@FunctionInvocation(tfd, args) <- functionCallsOf(cond).toSeq
+    } yield {
+      val formalToRealArgs = tfd.params.map{ _.id}.zip(args).toMap
+      val post = tfd.postcondition map { post =>
+        application(
+          replaceFromIDs(formalToRealArgs, post),
+          Seq(fi)
+        )
+      } getOrElse BooleanLiteral(true)
+      val pre = tfd.precondition getOrElse BooleanLiteral(true)
+      and(pre, post)
     }
+
+    // We want to check if the negation of the vc is sat under inductive hyp.
+    // So we need to see if (indHyp /\ !vc) is satisfiable
+    liftLets(matchToIfThenElse(and(andJoin(inductiveHyps), not(cond))))
+
+  }
+
+  // We need to know the function context.
+  // The reason is we do not want to assume postconditions of functions referring to 
+  // the current function, as this may make the proof unsound
+  override def assertVC(vc: VC) = {
+    currentFunDef = Some(vc.fd)
+    assertCnstr(withInductiveHyp(vc.condition))
+  }
 
 }

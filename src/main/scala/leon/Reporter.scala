@@ -43,6 +43,7 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
   final def info(pos: Position, msg: Any): Unit    = emit(account(Message(INFO, pos, msg)))
   final def warning(pos: Position, msg: Any): Unit = emit(account(Message(WARNING, pos, msg)))
   final def error(pos: Position, msg: Any): Unit   = emit(account(Message(ERROR, pos, msg)))
+  final def title(pos: Position, msg: Any): Unit   = emit(account(Message(INFO, pos, Console.BOLD + msg + Console.RESET)))
 
   final def fatalError(pos: Position, msg: Any): Nothing = {
     emit(account(Message(FATAL, pos, msg)))
@@ -97,6 +98,7 @@ abstract class Reporter(val debugSections: Set[DebugSection]) {
   final def info(msg: Any): Unit          = info(NoPosition, msg)
   final def warning(msg: Any): Unit       = warning(NoPosition, msg)
   final def error(msg: Any): Unit         = error(NoPosition, msg)
+  final def title(msg: Any): Unit         = title(NoPosition, msg)
   final def fatalError(msg: Any): Nothing = fatalError(NoPosition, msg)
   final def internalError(msg: Any) : Nothing = internalError(NoPosition, msg)
   final def internalAssertion(cond : Boolean, msg: Any) : Unit = internalAssertion(cond,NoPosition, msg)
@@ -113,10 +115,24 @@ class DefaultReporter(debugSections: Set[DebugSection]) extends Reporter(debugSe
     case DEBUG(_) => "["+Console.MAGENTA          +" Debug  "+Console.RESET+"]"
   }
 
+  def smartPos(p: Position): String = {
+    if (p == NoPosition) {
+      ""
+    } else {
+      val target = p.file.getAbsolutePath()
+      val here   = new java.io.File(".").getAbsolutePath().stripSuffix(".")
+      val diff   = target.stripPrefix(here)
+
+      val filePos = diff+":"
+
+      filePos + p + ": "
+    }
+  }
+
   def emit(msg: Message) = {
     val posString = if (msg.position != NoPosition) { msg.position+": " } else { "" }
 
-    println(reline(severityToPrefix(msg.severity), posString + msg.msg.toString))
+    println(reline(severityToPrefix(msg.severity), smartPos(msg.position) + msg.msg.toString))
     printLineContent(msg.position)
   }
 

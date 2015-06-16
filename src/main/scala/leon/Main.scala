@@ -45,29 +45,29 @@ object Main {
     val optNoop        = LeonFlagOptionDef("noop",        "No operation performed, just output program",           false)
     val optVerify      = LeonFlagOptionDef("verify",      "Verify function contracts",                             true )
     val optHelp        = LeonFlagOptionDef("help",        "Show help message",                                     false)
-    val optEval        = LeonFlagOptionDef("eval",        "Evaluate ground functions",                             false)
 
     override val definedOptions: Set[LeonOptionDef[Any]] =
-      Set(optTermination, optRepair, optSynthesis, optXLang, optNoop, optHelp, optVerify, optEval)
+      Set(optTermination, optRepair, optSynthesis, optXLang, optNoop, optHelp, optVerify)
 
   }
 
   lazy val allOptions: Set[LeonOptionDef[Any]] = allComponents.flatMap(_.definedOptions)
 
   def displayHelp(reporter: Reporter, error: Boolean) = {
-    reporter.info(MainComponent.description)
+
+    reporter.title(MainComponent.description)
     for (opt <- MainComponent.definedOptions.toSeq.sortBy(_.name)) {
       reporter.info(opt.helpString)
     }
     reporter.info("")
 
-    reporter.info("Additional top-level options")
+    reporter.title("Additional top-level options")
     for (opt <- SharedOptions.definedOptions.toSeq.sortBy(_.name)) {
       reporter.info(opt.helpString)
     }
     reporter.info("")
       
-    reporter.info("Additional options, by component:")
+    reporter.title("Additional options, by component:")
 
     for (c <- (allComponents - MainComponent - SharedOptions).toSeq.sortBy(_.name) if c.definedOptions.nonEmpty) {
       reporter.info("")
@@ -81,7 +81,7 @@ object Main {
   }
 
   def displayVersion(reporter: Reporter) = {
-    reporter.info("Leon verification and synthesis tool (http://leon.epfl.ch/)")
+    reporter.title("Leon verification and synthesis tool (http://leon.epfl.ch/)")
     reporter.info("")
   }
 
@@ -154,7 +154,7 @@ object Main {
     val repairF      = ctx.findOptionOrDefault(optRepair)
     val terminationF = ctx.findOptionOrDefault(optTermination)
     val verifyF      = ctx.findOptionOrDefault(optVerify)
-    val evalF        = ctx.findOptionOrDefault(optEval)
+    val evalF        = ctx.findOption(SharedOptions.optEval)
 
     def debugTrees(title: String): LeonPhase[Program, Program] = {
       if (ctx.reporter.isDebugEnabled(DebugSectionTrees)) {
@@ -187,7 +187,7 @@ object Main {
         else if (repairF) RepairPhase
         else if (terminationF) TerminationPhase
         else if (xlangF) XLangAnalysisPhase
-        else if (evalF) EvaluationPhase
+        else if (evalF.isDefined) EvaluationPhase
         else if (verifyF) {
           //adding time instrumentation phase here
           	RecursionCountPhase andThen FunctionClosure andThen AnalysisPhase
@@ -230,7 +230,7 @@ object Main {
     val doWatch = ctx.findOptionOrDefault(SharedOptions.optWatch)
 
     if (doWatch) {
-      val watcher = new FilesWatcher(ctx, ctx.files)
+      val watcher = new FilesWatcher(ctx, ctx.files ++ Build.libFiles.map{ new java.io.File(_)})
       watcher.onChange {
         execute(args, ctx)
       }

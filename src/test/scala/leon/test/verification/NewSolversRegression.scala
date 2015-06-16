@@ -16,30 +16,18 @@ class NewSolversRegression extends VerificationRegression {
   val pipeFront = xlang.NoXLangFeaturesChecking
   val pipeBack = AnalysisPhase
   val optionVariants: List[List[String]] = {
-    val isZ3Available = try {
-      Z3Interpreter.buildDefault
-      true
-    } catch {
-      case e: java.io.IOException =>
-        false
-    }
 
     val isCVC4Available = try {
-      CVC4Interpreter.buildDefault
+      CVC4Interpreter.buildDefault.free()
       true
     } catch {
       case e: java.io.IOException =>
         false
     }
 
-    (
-      if (isZ3Available)
-        List(List("--solvers=smt-z3-q", "--feelinglucky", "--timeout=3"))
-      else Nil
-    ) ++ (
-      if (isCVC4Available)
-        List(List("--solvers=smt-cvc4-proof", "--feelinglucky",  "--timeout=3"))
-      else Nil
-    )
+    if (isCVC4Available)
+      List(List("--solvers=smt-cvc4-cex,smt-cvc4-proof", "--feelinglucky", "--timeout=5"))
+    else Nil
+
   }
 }

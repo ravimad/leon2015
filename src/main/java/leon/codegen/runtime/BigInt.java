@@ -35,8 +35,15 @@ public final class BigInt {
     return new BigInt(_underlying.divide(that.underlying()));
   }
 
+  public BigInt rem(BigInt that) {
+    return new BigInt(_underlying.remainder(that.underlying()));
+  }
+
   public BigInt mod(BigInt that) {
-    return new BigInt(_underlying.mod(that.underlying()));
+    if(that.underlying().compareTo(new BigInteger("0")) < 0)
+      return new BigInt(_underlying.mod(that.underlying().negate()));
+    else
+      return new BigInt(_underlying.mod(that.underlying()));
   }
 
   public BigInt neg() {

@@ -6,7 +6,6 @@ package purescala
 import Expressions._
 import Common._
 import Types._
-import Definitions._
 import Constructors._
 import ExprOps._
 
@@ -52,6 +51,7 @@ object Extractors {
       case Minus(t1,t2) => Some((t1,t2,Minus))
       case Times(t1,t2) => Some((t1,t2,Times))
       case Division(t1,t2) => Some((t1,t2,Division))
+      case Remainder(t1,t2) => Some((t1,t2,Remainder))
       case Modulo(t1,t2) => Some((t1,t2,Modulo))
       case LessThan(t1,t2) => Some((t1,t2,LessThan))
       case GreaterThan(t1,t2) => Some((t1,t2,GreaterThan))
@@ -61,7 +61,7 @@ object Extractors {
       case BVMinus(t1,t2) => Some((t1,t2,BVMinus))
       case BVTimes(t1,t2) => Some((t1,t2,BVTimes))
       case BVDivision(t1,t2) => Some((t1,t2,BVDivision))
-      case BVModulo(t1,t2) => Some((t1,t2,BVModulo))
+      case BVRemainder(t1,t2) => Some((t1,t2,BVRemainder))
       case BVAnd(t1,t2) => Some((t1,t2,BVAnd))
       case BVOr(t1,t2) => Some((t1,t2,BVOr))
       case BVXOr(t1,t2) => Some((t1,t2,BVXOr))
@@ -108,9 +108,9 @@ object Extractors {
       case CaseClass(cd, args) => Some((args, CaseClass(cd, _)))
       case And(args) => Some((args, and))
       case Or(args) => Some((args, or))
-      case NonemptySet(els) =>
-        Some(( els.toSeq, els => NonemptySet(els.toSet) ))
-      case NonemptyMap(args) => {
+      case FiniteSet(els, base) =>
+        Some(( els.toSeq, els => FiniteSet(els.toSet, base) ))
+      case FiniteMap(args, f, t) => {
         val subArgs = args.flatMap{case (k, v) => Seq(k, v)}
         val builder = (as: Seq[Expr]) => {
           def rec(kvs: Seq[Expr]) : Seq[(Expr, Expr)] = kvs match {
@@ -119,7 +119,7 @@ object Extractors {
             case Seq() => Seq()
             case _ => sys.error("odd number of key/value expressions")
           }
-          NonemptyMap(rec(as))
+          FiniteMap(rec(as), f, t)
         }
         Some((subArgs, builder))
       }
@@ -267,14 +267,6 @@ object Extractors {
     }
   }
 
-  object FiniteSet {
-    def unapply(e: Expr): Option[Set[Expr]] = e match {
-      case EmptySet(_) => Some(Set())
-      case NonemptySet(els) => Some(els)
-      case _ => None
-    }
-  }
-  
   object FiniteMultiset {
     def unapply(e: Expr): Option[Seq[Expr]] = e match {
       case EmptyMultiset(_) => Some(Seq())
@@ -282,15 +274,7 @@ object Extractors {
       case _ => None
     }
   }
-  
-  object FiniteMap {
-    def unapply(e: Expr): Option[Seq[(Expr, Expr)]] = e match {
-      case EmptyMap(_, _) => Some(Seq())
-      case NonemptyMap(pairs) => Some(pairs)
-      case _ => None
-    }
-  }
-  
+
   object FiniteArray {
     def unapply(e: Expr): Option[(Map[Int, Expr], Option[Expr], Expr)] = e match {
       case EmptyArray(_) => 

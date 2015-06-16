@@ -10,8 +10,7 @@ import purescala.ExprOps._
 abstract class Tactic(vctx: VerificationContext) {
   val description : String
 
-  def generateVCs(fdUnsafe: FunDef): Seq[VC] = {
-    val fd = fdUnsafe.duplicate
+  def generateVCs(fd: FunDef): Seq[VC] = {
     fd.fullBody = matchToIfThenElse(fd.fullBody)
     generatePostconditions(fd) ++
     generatePreconditions(fd) ++
@@ -30,5 +29,16 @@ abstract class Tactic(vctx: VerificationContext) {
 
   protected def collectWithPC[T](f: PartialFunction[Expr, T])(expr: Expr): Seq[(T, Expr)] = {
     CollectorWithPaths(f).traverse(expr)
+  }
+
+  protected def sizeLimit(s: String, limit: Int) = {
+    require(limit > 3)
+    // Crop the call to display it properly
+    val res = s.takeWhile(_ != '\n').take(limit)
+    if (res == s) {
+      res
+    } else {
+      res + " ..."
+    }
   }
 }

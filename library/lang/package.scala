@@ -7,15 +7,15 @@ import scala.language.implicitConversions
 
 package object lang {
   @ignore
-  sealed class IsValid(val property : Boolean) {
+  implicit class BooleanDecorations(val underlying: Boolean) {
     def holds : Boolean = {
-      assert(property)
-      property
+      assert(underlying)
+      underlying
+    }
+    def ==> (that: Boolean): Boolean = {
+      !underlying || that
     }
   }
-
-  @ignore
-  implicit def any2IsValid(x: Boolean) : IsValid = new IsValid(x)
 
   @ignore
   object InvariantFunction {
@@ -33,6 +33,20 @@ package object lang {
     val (in, out) = io
     def passes(tests : A => B ) : Boolean = 
       try { tests(in) == out } catch { case _ : MatchError => true }
+  }
+
+  @ignore
+  object BigInt {
+    def apply(b: Int): scala.math.BigInt = scala.math.BigInt(b)
+    def apply(b: String): scala.math.BigInt = scala.math.BigInt(b)
+
+    def unapply(b: scala.math.BigInt): scala.Option[Int] = {
+      if(b >= Integer.MIN_VALUE && b <= Integer.MAX_VALUE) {
+        scala.Some(b.intValue())
+      } else {
+        scala.None
+      }
+    }
   }
 
 }

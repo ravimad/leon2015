@@ -155,7 +155,7 @@ object ImperativeCodeElimination extends LeonPhase[Program, (Program, Set[FunDef
           val whileFunDef = new FunDef(FreshIdentifier(parent.id.name), Nil, whileFunReturnType, whileFunValDefs,DefType.MethodDef).setPos(wh)
           wasLoop += whileFunDef
           
-          val whileFunCond = condRes
+          val whileFunCond = condScope(condRes)
           val whileFunRecursiveCall = replaceNames(condFun,
             bodyScope(FunctionInvocation(whileFunDef.typed, modifiedVars.map(id => condBodyFun(id).toVariable)).setPos(wh)))
           val whileFunBaseCase =
@@ -181,9 +181,11 @@ object ImperativeCodeElimination extends LeonPhase[Program, (Program, Set[FunDef
           whileFunDef.precondition = invariantPrecondition
           whileFunDef.postcondition = trivialPostcondition.map(expr => 
               Lambda(Seq(ValDef(resVar.id)), and(expr, invariantPostcondition match { 
-                case Some(e) => e
-                case None => BooleanLiteral(true)
-              })))
+                  case Some(e) => e
+                  case None => BooleanLiteral(true)
+                }).setPos(wh)
+              ).setPos(wh)
+            )
 
           val finalVars = modifiedVars.map(_.freshen)
           val finalScope = (body: Expr) => {
@@ -251,6 +253,16 @@ object ImperativeCodeElimination extends LeonPhase[Program, (Program, Set[FunDef
               body)
         }
         (i, scope, Map())
+
+      case And(args) => {
+        val ifExpr = args.reduceRight((el, acc) => IfExpr(el, acc, BooleanLiteral(false)))
+        toFunction(ifExpr)
+      }
+
+      case Or(args) => {
+        val ifExpr = args.reduceRight((el, acc) => IfExpr(el, BooleanLiteral(true), acc))
+        toFunction(ifExpr)
+      }
 
       case n @ NAryOperator(Seq(), recons) => (n, (body: Expr) => body, Map())
       case n @ NAryOperator(args, recons) => {

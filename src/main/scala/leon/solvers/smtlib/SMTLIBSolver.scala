@@ -53,7 +53,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
   /* Printing VCs */
 
   protected val out: java.io.FileWriter = if (reporter.isDebugEnabled) {
-    val file = context.files.headOption.map(_.getName).getOrElse("NA")   
+    val file = context.files.headOption.map(_.getName).getOrElse("NA")
     val n    = VCNumbers.getNext(targetName+file)
 
     val dir = new java.io.File("vcs")

@@ -107,7 +107,7 @@ object RealTimeQueue {
 
   def streamScheduleProperty[T](s: Stream[T], sch: Stream[T]) = {
     s.valid && sch.valid &&
-      s.firstLazyClosure == sch.firstLazyClosure && //first lazy closure property is preserved
+      s.firstLazyClosure == sch.firstLazyClosure && //sch is the first lazy closure of 's'
       s.suffix(sch) //sch is a suffix of s
   }
   

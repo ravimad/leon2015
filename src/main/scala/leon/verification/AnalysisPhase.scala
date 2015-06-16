@@ -4,12 +4,13 @@ package leon
 package verification
 
 import purescala.Definitions._
-import purescala.Expressions._
 import purescala.ExprOps._
 
 import scala.concurrent.duration._
 
 import solvers._
+import solvers.combinators.PortfolioSolver
+import solvers.smtlib.SMTLIBCVC4QuantifiedSolver
 
 object AnalysisPhase extends LeonPhase[Program,VerificationReport] {
   val name = "Analysis"
@@ -56,9 +57,7 @@ object AnalysisPhase extends LeonPhase[Program,VerificationReport] {
     val defaultTactic   = new DefaultTactic(vctx)
     val inductionTactic = new InductionTactic(vctx)
 
-    def excludeByDefault(fd: FunDef): Boolean = {
-      (fd.annotations contains "verified") || (fd.annotations contains "library")
-    }
+    def excludeByDefault(fd: FunDef): Boolean = fd.annotations contains "library"
 
     val fdFilter = {
       import OptionsHelpers._
@@ -74,7 +73,7 @@ object AnalysisPhase extends LeonPhase[Program,VerificationReport] {
       }
 
       val tactic: Tactic =
-        if(funDef.annotations.contains("induct")) {
+        if (funDef.annotations.contains("induct")) {
           inductionTactic
         } else {
           defaultTactic
@@ -140,7 +139,7 @@ object AnalysisPhase extends LeonPhase[Program,VerificationReport] {
 
       val tStart = System.currentTimeMillis
 
-      s.assertCnstr(Not(vcCond))
+      s.assertVC(vc)
 
       val satResult = s.check
 

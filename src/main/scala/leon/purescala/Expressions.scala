@@ -326,16 +326,20 @@ object Expressions {
     val getType = IntegerType
   }
   /*
-   * Division and Modulo follows Java/Scala semantics. Division corresponds
-   * to / operator on BigInt and Modulo corresponds to %. Note that in
-   * Java/Scala % is rather called remainder and the "mod" operator is also
-   * defined on BigInteger and differs from our Modulo. The "mod" operator
-   * returns an always positive remainder, while our Modulo could return
+   * Division and Remainder follows Java/Scala semantics. Division corresponds
+   * to / operator on BigInt and Remainder corresponds to %. Note that in
+   * Java/Scala % is called remainder and the "mod" operator (Modulo in Leon) is also
+   * defined on BigInteger and differs from Remainder. The "mod" operator
+   * returns an always positive remainder, while Remainder could return
    * a negative remainder. The following must hold:
    *
-   *    Division(x, y) * y + Modulo(x, y) == x
+   *    Division(x, y) * y + Remainder(x, y) == x
    */
   case class Division(lhs: Expr, rhs: Expr) extends Expr { 
+    require(lhs.getType == IntegerType && rhs.getType == IntegerType)
+    val getType = IntegerType
+  }
+  case class Remainder(lhs: Expr, rhs: Expr) extends Expr { 
     require(lhs.getType == IntegerType && rhs.getType == IntegerType)
     val getType = IntegerType
   }
@@ -377,7 +381,7 @@ object Expressions {
     require(lhs.getType == Int32Type && rhs.getType == Int32Type)
     val getType = Int32Type
   }
-  case class BVModulo(lhs: Expr, rhs: Expr) extends Expr { 
+  case class BVRemainder(lhs: Expr, rhs: Expr) extends Expr { 
     require(lhs.getType == Int32Type && rhs.getType == Int32Type)
     val getType = Int32Type
   }
@@ -405,15 +409,10 @@ object Expressions {
   }
 
   /* Set expressions */
-  case class NonemptySet(elements: Set[Expr]) extends Expr {
-    require(elements.nonEmpty)
-    val getType = SetType(optionToType(leastUpperBound(elements.toSeq.map(_.getType)))).unveilUntyped
+  case class FiniteSet(elements: Set[Expr], base: TypeTree) extends Expr {
+    val getType = SetType(base).unveilUntyped
   }
-  
-  case class EmptySet(tpe: TypeTree) extends Expr with Terminal {
-    val getType = SetType(tpe).unveilUntyped
-  }
-  
+
   case class ElementOfSet(element: Expr, set: Expr) extends Expr {
     val getType = BooleanType
   }
@@ -435,21 +434,10 @@ object Expressions {
   }
 
   /* Map operations. */
-  case class NonemptyMap(singletons: Seq[(Expr, Expr)]) extends Expr {
-    require(singletons.nonEmpty)
-    val getType = {
-      val (keys, values) = singletons.unzip
-      MapType(
-        optionToType(leastUpperBound(keys.map(_.getType))),
-        optionToType(leastUpperBound(values.map(_.getType)))
-      ).unveilUntyped
-    }
-  }
-  
-  case class EmptyMap(keyType: TypeTree, valueType: TypeTree) extends Expr with Terminal {
+  case class FiniteMap(singletons: Seq[(Expr, Expr)], keyType: TypeTree, valueType: TypeTree) extends Expr {
     val getType = MapType(keyType, valueType).unveilUntyped
   }
-  
+
   case class MapGet(map: Expr, key: Expr) extends Expr {
     val getType = map.getType match {
       case MapType(_, to) => to

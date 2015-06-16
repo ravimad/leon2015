@@ -4,6 +4,7 @@ package leon
 package solvers
 package z3
 
+import utils.IncrementalBijection
 import _root_.z3.scala._
 
 import purescala.Common._
@@ -11,6 +12,7 @@ import purescala.Definitions._
 import purescala.Expressions._
 import purescala.Constructors._
 import purescala.ExprOps._
+import purescala.Types._
 
 import solvers.templates._
 
@@ -30,6 +32,11 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
   val useCodeGen        = context.findOptionOrDefault(optUseCodeGen)
   val evalGroundApps    = context.findOptionOrDefault(optEvalGround)
   val unrollUnsatCores  = context.findOptionOrDefault(optUnrollCores)
+  val assumePreHolds    = context.findOptionOrDefault(optAssumePre)
+
+  protected val errors     = new IncrementalBijection[Unit, Boolean]()
+  protected def hasError   = errors.getB(()) contains true
+  protected def addError() = errors += () -> true
 
   private val evaluator: Evaluator =
     if(useCodeGen) {
@@ -60,15 +67,15 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
 
       val functionsModel: Map[Z3FuncDecl, (Seq[(Seq[Z3AST], Z3AST)], Z3AST)] = model.getModelFuncInterpretations.map(i => (i._1, (i._2, i._3))).toMap
       val functionsAsMap: Map[Identifier, Expr] = functionsModel.flatMap(p => {
-        if (functions containsZ3 p._1) {
-          val tfd = functions.toLeon(p._1)
+        if (functions containsB p._1) {
+          val tfd = functions.toA(p._1)
           if (!tfd.hasImplementation) {
             val (cses, default) = p._2
-            val ite = cses.foldLeft(fromZ3Formula(model, default))((expr, q) => IfExpr(
+            val ite = cses.foldLeft(fromZ3Formula(model, default, tfd.returnType))((expr, q) => IfExpr(
               andJoin(
-                q._1.zip(tfd.params).map(a12 => Equals(fromZ3Formula(model, a12._1), Variable(a12._2.id)))
+                q._1.zip(tfd.params).map(a12 => Equals(fromZ3Formula(model, a12._1, a12._2.getType), Variable(a12._2.id)))
               ),
-              fromZ3Formula(model, q._2),
+              fromZ3Formula(model, q._2, tfd.returnType),
               expr))
             Seq((tfd.id, ite))
           } else Seq()
@@ -76,10 +83,10 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
       })
 
       val constantFunctionsAsMap: Map[Identifier, Expr] = model.getModelConstantInterpretations.flatMap(p => {
-        if(functions containsZ3 p._1) {
-          val tfd = functions.toLeon(p._1)
+        if(functions containsB p._1) {
+          val tfd = functions.toA(p._1)
           if(!tfd.hasImplementation) {
-            Seq((tfd.id, fromZ3Formula(model, p._2)))
+            Seq((tfd.id, fromZ3Formula(model, p._2, tfd.returnType)))
           } else Seq()
         } else Seq()
       }).toMap
@@ -121,9 +128,7 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
     }
 
     def encodeExpr(bindings: Map[Identifier, Z3AST])(e: Expr): Z3AST = {
-      toZ3Formula(e, bindings).getOrElse {
-        reporter.fatalError("Failed to translate "+e+" to z3 ("+e.getClass+")")
-      }
+      toZ3Formula(e, bindings)
     }
 
     def substitute(substMap: Map[Z3AST, Z3AST]): Z3AST => Z3AST = {
@@ -138,7 +143,7 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
     def mkAnd(es: Z3AST*) = z3.mkAnd(es : _*)
     def mkEquals(l: Z3AST, r: Z3AST) = z3.mkEq(l, r)
     def mkImplies(l: Z3AST, r: Z3AST) = z3.mkImplies(l, r)
-  })
+  }, assumePreHolds)
 
 
   initZ3()
@@ -152,6 +157,7 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
   val unrollingBank = new UnrollingBank(reporter, templateGenerator)
 
   def push() {
+    errors.push()
     solver.push()
     unrollingBank.push()
     varsInVC = Set[Identifier]() :: varsInVC
@@ -159,6 +165,10 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
   }
 
   def pop(lvl: Int = 1) {
+    for (i <- 1 until lvl) {
+      errors.pop()
+    }
+
     solver.pop(lvl)
     unrollingBank.pop(lvl)
     varsInVC = varsInVC.drop(lvl)
@@ -166,11 +176,19 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
   }
 
   override def check: Option[Boolean] = {
-    fairCheck(Set())
+    if (hasError) {
+      None
+    } else {
+      fairCheck(Set())
+    }
   }
 
   override def checkAssumptions(assumptions: Set[Expr]): Option[Boolean] = {
-    fairCheck(assumptions)
+    if (hasError) {
+      None
+    } else {
+      fairCheck(assumptions)
+    }
   }
 
   var foundDefinitiveAnswer = false
@@ -179,22 +197,27 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
   var definitiveCore   : Set[Expr] = Set.empty
 
   def assertCnstr(expression: Expr) {
-    val freeVars = variablesOf(expression)
-    varsInVC = (varsInVC.head ++ freeVars) :: varsInVC.tail
+    try {
+      val freeVars = variablesOf(expression)
+      varsInVC = (varsInVC.head ++ freeVars) :: varsInVC.tail
 
-    // We make sure all free variables are registered as variables
-    freeVars.foreach { v =>
-      variables.toZ3OrCompute(Variable(v)) {
-        templateGenerator.encoder.encodeId(v)
+      // We make sure all free variables are registered as variables
+      freeVars.foreach { v =>
+        variables.cachedB(Variable(v)) {
+          templateGenerator.encoder.encodeId(v)
+        }
       }
-    }
 
-    frameExpressions = (expression :: frameExpressions.head) :: frameExpressions.tail
+      frameExpressions = (expression :: frameExpressions.head) :: frameExpressions.tail
 
-    val newClauses = unrollingBank.getClauses(expression, variables.leonToZ3)
+      val newClauses = unrollingBank.getClauses(expression, variables.aToB)
 
-    for (cl <- newClauses) {
-      solver.assertCnstr(cl)
+      for (cl <- newClauses) {
+        solver.assertCnstr(cl)
+      }
+    } catch {
+      case _: IllegalArgumentException =>
+        addError()
     }
   }
 
@@ -219,11 +242,11 @@ class FairZ3Solver(val context : LeonContext, val program: Program)
     }
 
     // these are the optional sequence of assumption literals
-    val assumptionsAsZ3: Seq[Z3AST]    = assumptions.flatMap(toZ3Formula(_)).toSeq
+    val assumptionsAsZ3: Seq[Z3AST]    = assumptions.map(toZ3Formula(_)).toSeq
     val assumptionsAsZ3Set: Set[Z3AST] = assumptionsAsZ3.toSet
 
     def z3CoreToCore(core: Seq[Z3AST]): Set[Expr] = {
-      core.filter(assumptionsAsZ3Set).map(ast => fromZ3Formula(null, ast) match {
+      core.filter(assumptionsAsZ3Set).map(ast => fromZ3Formula(null, ast, BooleanType) match {
           case n @ Not(Variable(_)) => n
           case v @ Variable(_) => v
           case x => scala.sys.error("Impossible element extracted from core: " + ast + " (as Leon tree : " + x + ")")

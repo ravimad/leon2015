@@ -155,10 +155,29 @@ trait ASTExtractors {
 
     object ExHoldsExpression {
       def unapply(tree: Select) : Option[Tree] = tree match {
-        case Select(Apply(ExSymbol("leon", "lang", "any2IsValid"), realExpr :: Nil), ExNamed("holds")) =>
-            Some(realExpr)
+        case Select(
+          Apply(ExSelected("leon", "lang", "package", "BooleanDecorations"), realExpr :: Nil),
+          ExNamed("holds")
+        ) => Some(realExpr)
         case _ => None
        }
+    }
+
+    object ExImplies {
+      def unapply(tree: Apply) : Option[(Tree, Tree)] = tree match {
+        case
+          Apply(
+            Select(
+              Apply(
+                ExSelected("leon", "lang", "package", "BooleanDecorations"),
+                lhs :: Nil
+              ),
+              ExNamed("$eq$eq$greater")
+            ),
+            rhs :: Nil
+          ) => Some((lhs, rhs))
+        case _ => None
+      }
     }
 
     object ExRequiredExpression {
@@ -210,6 +229,8 @@ trait ASTExtractors {
       def unapply(tree: Tree): Option[Tree] = tree  match {
         case Apply(ExSelected("scala", "package", "BigInt", "apply"), n :: Nil) =>
           Some(n)
+        case Apply(ExSelected("leon", "lang", "package", "BigInt", "apply"), n :: Nil) =>
+          Some(n)
         case _ =>
           None
       }
@@ -251,10 +272,15 @@ trait ASTExtractors {
 
     object ExObjectDef {
       /** Matches an object with no type parameters, and regardless of its
-       * visibility. Does not match on the automatically generated companion
+       * visibility. Does not match on case objects or the automatically generated companion
        * objects of case classes (or any synthetic class). */
       def unapply(cd: ClassDef): Option[(String,Template)] = cd match {
-        case ClassDef(_, name, tparams, impl) if (cd.symbol.isModuleClass || cd.symbol.hasPackageFlag) && tparams.isEmpty && !cd.symbol.isSynthetic => {
+        case ClassDef(_, name, tparams, impl) if
+          (cd.symbol.isModuleClass || cd.symbol.hasPackageFlag) &&
+          tparams.isEmpty &&
+          !cd.symbol.isSynthetic &&
+          !cd.symbol.isCaseClass
+        => {
           Some((name.toString, impl))
         }
         case _ => None
@@ -795,6 +821,15 @@ trait ASTExtractors {
     object ExPatternMatching {
       def unapply(tree: Match): Option[(Tree,List[CaseDef])] =
         if(tree != null) Some((tree.selector, tree.cases)) else None
+    }
+
+    object ExBigIntPattern {
+      def unapply(tree: UnApply): Option[Tree] = tree match {
+        case ua @ UnApply(Apply(ExSelected("leon", "lang", "package", "BigInt", "unapply"), _), List(l)) =>
+          Some(l)
+        case _ =>
+          None
+      }
     }
 
     object ExIsInstanceOf {

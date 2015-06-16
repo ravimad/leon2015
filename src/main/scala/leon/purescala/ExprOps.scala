@@ -666,6 +666,22 @@ object ExprOps {
     rec(expr, Map.empty)
   }
 
+  /*
+   * Lifts lets to top level, without pushing any used variable out of scope.
+   * Assumes no match expressions (i.e. matchToIfThenElse has been called on e)
+   */
+  def liftLets(e: Expr): Expr = {
+
+    type C = Seq[(Identifier, Expr)]
+
+    def lift(e: Expr, defs: C) = e match {
+      case Let(i, ex, b) => (b, (i, ex) +: defs)
+      case _ => (e, defs)
+    }
+    val (bd, defs) = genericTransform[C](noTransformer, lift, _.flatten)(Seq())(e)
+
+    defs.foldRight(bd){ case ((id, e), body) => let(id, e, body) }
+  }
 
   /**
    * Generates substitutions necessary to transform scrutinee to equivalent
@@ -967,8 +983,8 @@ object ExprOps {
     case CharType                   => CharLiteral('a')
     case BooleanType                => BooleanLiteral(false)
     case UnitType                   => UnitLiteral()
-    case SetType(baseType)          => EmptySet(tpe)
-    case MapType(fromType, toType)  => EmptyMap(fromType, toType)
+    case SetType(baseType)          => FiniteSet(Set(), tpe)
+    case MapType(fromType, toType)  => FiniteMap(Nil, fromType, toType)
     case TupleType(tpes)            => Tuple(tpes.map(simplestValue))
     case ArrayType(tpe)             => EmptyArray(tpe)
 
@@ -1082,6 +1098,7 @@ object ExprOps {
   }
 
   private def noCombiner(subCs: Seq[Unit]) = ()
+  private def noTransformer[C](e: Expr, c: C) = (e, c)
 
   def simpleTransform(pre: Expr => Expr, post: Expr => Expr)(expr: Expr) = {
     val newPre  = (e: Expr, c: Unit) => (pre(e), ())
@@ -1185,11 +1202,9 @@ object ExprOps {
     }
 
     def traverse(funDef: FunDef): Seq[T] = {
-      // @mk FIXME: This seems overly compicated
-      val precondition = funDef.precondition.map(e => matchToIfThenElse(e)).toSeq
-      val precTs = funDef.precondition.map(e => traverse(e)).toSeq.flatten
-      val bodyTs = funDef.body.map(e => traverse(e, precondition)).toSeq.flatten
-      val postTs = funDef.postcondition.map(p => traverse(p)).toSeq.flatten
+      val precTs = funDef.precondition.toSeq.flatMap(traverse)
+      val bodyTs = funDef.body.toSeq.flatMap(traverse(_, funDef.precondition.toSeq))
+      val postTs = funDef.postcondition.toSeq.flatMap(traverse)
       precTs ++ bodyTs ++ postTs
     }
 

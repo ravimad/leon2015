@@ -71,7 +71,7 @@ class SMTLIBCVC4Solver(context: LeonContext, program: Program) extends SMTLIBSol
       GenericValue(tp, n.toInt)
 
     case (QualifiedIdentifier(SMTIdentifier(SSymbol("emptyset"), Seq()), _), SetType(base)) =>
-      EmptySet(base)
+      FiniteSet(Set(), base)
 
     case (FunctionApplication(SimpleSymbol(SSymbol("__array_store_all__")), Seq(_, elem)), RawArrayType(k,v)) =>
       RawArrayValue(k, Map(), fromSMT(elem, v))
@@ -92,12 +92,12 @@ class SMTLIBCVC4Solver(context: LeonContext, program: Program) extends SMTLIBSol
 
     case (FunctionApplication(SimpleSymbol(SSymbol("insert")), elems), SetType(base)) =>
       val selems = elems.init.map(fromSMT(_, base))
-      val FiniteSet(se) = fromSMT(elems.last, tpe)
+      val FiniteSet(se, _) = fromSMT(elems.last, tpe)
       finiteSet(se ++ selems, base)
 
     case (FunctionApplication(SimpleSymbol(SSymbol("union")), elems), SetType(base)) =>
       finiteSet(elems.map(fromSMT(_, tpe) match {
-        case FiniteSet(elems) => elems
+        case FiniteSet(elems, _) => elems
       }).flatten.toSet, base)
 
     // FIXME (nicolas)
@@ -114,45 +114,12 @@ class SMTLIBCVC4Solver(context: LeonContext, program: Program) extends SMTLIBSol
   }
 
   override def toSMT(e: Expr)(implicit bindings: Map[Identifier, Term]) = e match {
-    case a @ FiniteArray(elems, default, size) =>
-      val tpe @ ArrayType(base) = normalizeType(a.getType)
-      declareSort(tpe)
-
-      var ar: Term = declareVariable(FreshIdentifier("arrayconst", RawArrayType(Int32Type, base)))
-
-      for ((i, e) <- elems) {
-        ar = FunctionApplication(SSymbol("store"), Seq(ar, toSMT(IntLiteral(i)), toSMT(e)))
-      }
-
-      FunctionApplication(constructors.toB(tpe), Seq(toSMT(size), ar))
-
-    case fm @ FiniteMap(elems) =>
-      import OptionManager._
-      val mt @ MapType(from, to) = fm.getType
-      declareSort(mt)
-
-      var m: Term = declareVariable(FreshIdentifier("mapconst", RawArrayType(from, leonOptionType(to))))
-
-      sendCommand(Assert(SMTForall(
-        SortedVar(SSymbol("mapelem"), declareSort(from)), Seq(),
-        Core.Equals(
-          ArraysEx.Select(m, SSymbol("mapelem")),
-          toSMT(mkLeonNone(to))
-        )
-      )))
-
-      for ((k, v) <- elems) {
-        m = FunctionApplication(SSymbol("store"), Seq(m, toSMT(k), toSMT(mkLeonSome(v))))
-      }
-
-      m
-
     /**
      * ===== Set operations =====
      */
 
 
-    case fs @ FiniteSet(elems) =>
+    case fs @ FiniteSet(elems, _) =>
       if (elems.isEmpty) {
         QualifiedIdentifier(SMTIdentifier(SSymbol("emptyset")), Some(declareSort(fs.getType)))
       } else {

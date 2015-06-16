@@ -51,14 +51,14 @@ class UninterpretedZ3Solver(val context : LeonContext, val program: Program)
   private var freeVariables = Set[Identifier]()
   def assertCnstr(expression: Expr) {
     freeVariables ++= variablesOf(expression)
-    solver.assertCnstr(toZ3Formula(expression).getOrElse(scala.sys.error("Failed to compile to Z3: "+expression)))
+    solver.assertCnstr(toZ3Formula(expression))
   }
 
   override def check: Option[Boolean] = solver.check()
 
   override def checkAssumptions(assumptions: Set[Expr]): Option[Boolean] = {
     freeVariables ++= assumptions.flatMap(variablesOf)
-    solver.checkAssumptions(assumptions.toSeq.map(toZ3Formula(_).get) : _*)
+    solver.checkAssumptions(assumptions.toSeq.map(toZ3Formula(_)) : _*)
   }
 
   def getModel = {
@@ -66,7 +66,7 @@ class UninterpretedZ3Solver(val context : LeonContext, val program: Program)
   }
 
   def getUnsatCore = {
-    solver.getUnsatCore().map(ast => fromZ3Formula(null, ast) match {
+    solver.getUnsatCore().map(ast => fromZ3Formula(null, ast, BooleanType) match {
       case n @ Not(Variable(_)) => n
       case v @ Variable(_) => v
       case x => scala.sys.error("Impossible element extracted from core: " + ast + " (as Leon tree : " + x + ")")

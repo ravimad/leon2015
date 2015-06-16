@@ -4,9 +4,8 @@ package leon
 package utils
 
 import purescala.Definitions.Program
-import purescala.ScalaPrinter
 
-import purescala.{MethodLifting, CompleteAbstractDefinitions}
+import purescala.{MethodLifting, CompleteAbstractDefinitions,CheckADTFieldsTypes}
 import synthesis.{ConvertWithOracle, ConvertHoles}
 import verification.InjectAsserts
 
@@ -24,6 +23,7 @@ object PreprocessingPhase extends TransformationPhase {
       ConvertWithOracle             andThen
       ConvertHoles                  andThen
       CompleteAbstractDefinitions   andThen
+      CheckADTFieldsTypes           andThen
       InjectAsserts
 
 

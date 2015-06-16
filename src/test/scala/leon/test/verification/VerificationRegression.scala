@@ -30,7 +30,7 @@ trait VerificationRegression extends LeonTestSuite {
   val pipeFront: Pipeline[Program, Program]
   val pipeBack : Pipeline[Program, VerificationReport]
 
-  private def mkTest(files: List[String])(block: Output=>Unit) = {
+  private def mkTest(files: List[String], cat: String)(block: Output=>Unit) = {
     val extraction =
       ExtractionPhase andThen
       PreprocessingPhase andThen
@@ -61,6 +61,7 @@ trait VerificationRegression extends LeonTestSuite {
             }
           case _ =>
         }
+        test("Compilation of test files in " + testDir + cat)(fail("Failed to compile"))
     }
   }
 
@@ -74,25 +75,28 @@ trait VerificationRegression extends LeonTestSuite {
 
     val files = fs map { _.getPath }
 
-    mkTest(files)(block)
+    mkTest(files, cat)(block)
   }
 
   override def run(testName: Option[String], args: Args): Status = {
     forEachFileIn("valid") { output =>
       val Output(report, reporter) = output
-      for ((vc, vr) <- report.vrs if (!vr.isValid)) {
-        val status = if (vr.isInvalid) "invalid" else "inconclusive"
-        fail(s"The following verification condition was $status: $vc @${vc.getPos}")
+      for ((vc, vr) <- report.vrs if (vr.isInvalid)) {
+        fail(s"The following verification condition was invalid: $vc @${vc.getPos}")
+      }
+      for ((vc, vr) <- report.vrs if (vr.isInconclusive)) {
+        fail(s"The following verification condition was inconclusive: $vc @${vc.getPos}")
       }
       reporter.terminateIfError()
     }
 
     forEachFileIn("invalid") { output =>
       val Output(report, reporter) = output
-      assert(report.totalInvalid > 0,
-        "There should be at least one invalid verification condition.")
       assert(report.totalUnknown === 0,
         "There should not be unknown verification conditions.")
+      assert(report.totalInvalid > 0,
+        "There should be at least one invalid verification condition.")
+
     }
 
     super.run(testName, args)
