@@ -10,13 +10,7 @@ object Conqueue {
   def max(x: BigInt, y: BigInt): BigInt = if (x >= y) x else y
   def abs(x: BigInt): BigInt = if (x < 0) -x else x
   
-  /**
-   * This class stores a value and the
-   * time it would take to compute the value if
-   * it was completed lazily while accessing it.
-   */
-  case class Lazy[T](x: T, tx: BigInt) 
-
+  
   sealed abstract class ConQ[T] {
 
     /*def isTip: Boolean = {
@@ -27,25 +21,14 @@ object Conqueue {
     }*/    
   }  
   case class Tip[T](t: Conc[T]) extends ConQ[T]
-  case class Spine[T](head: Conc[T], rear: Lazy[ConQ[T]]) extends ConQ[T] {
-    /**
-     * Evaluates the rear one step and returns it.
-     * The second return value is the time taken
-     * to evalute the rear, which is captured by the Lazy 
-     * constructor.
-     */
-    def getRear: (ConQ[T], BigInt) = {      
-      this.rear match {
-        case Lazy(rear, tme) => (rear, tme)        
-      }
-    }
-  }
-//  /case class SpineLazy[T](head :Conc[T], rear: () => ConQ[T]) extends ConQ[T] // rear is lazily evaluated
-
+  case class Spine[T](head: Conc[T], rear: ConQ[T]) extends ConQ[T] 
+  // a closure corresponding to 'push' operations
+  case class pushLazy[T](ys: Single[T], xs: ConQ[T]) extends ConQ[T]
+  
   def pushLeft[T](ys: Single[T], xs: ConQ[T]): (ConQ[T], BigInt) = { //require some validity invariants 
     xs match {
       case Tip(CC(_, _)) => 
-        (new Spine(ys, Lazy(xs, 0)), 0) //time needed to evalute xs is '0'
+        (Spine(ys, Lazy(xs, 0)), 0) //time needed to evalute xs is '0'
       case Tip(Empty()) => 
         (Tip(ys), 0)
       case Tip(t @ Single(_)) => 
