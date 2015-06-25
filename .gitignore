@@ -15,6 +15,7 @@ target
 /setupenv
 /leon-bench
 /.test-history
+/out-classes
 
 # synthesis
 derivation*.dot
@@ -38,6 +39,9 @@ vcs/
 Leon.eml
 Leon.iml
 bin
+
+#scripts
+out-classes
 
 #z3
 .z3-trace

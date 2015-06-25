@@ -22,16 +22,16 @@ convenient interface) from the command line, see
 Warm-up: Max
 ------------
 
-As a warm-up we define and debug a `max` function in Leon
+As a warm-up illustrating verification, we define and debug a `max` function 
 and specify its properties.  Leon uses Scala constructs
 `require` and `ensuring` to document preconditions and
-postconditions of functions. However, in addition to
+postconditions of functions. Note that, in addition to
 checking these conditions at run-time (which standard Scala
 does), Leon can analyze the specifications statically and
-prove them for all executions, or automatically find
-inputs for which the conditions fail. Moreover, it can
-use specifications for constraint execution, 
-synthesis, and repair. 
+prove them for *all* executions, or, if they are wrong, automatically find
+inputs for which the conditions fail. (Moreover, it can
+execute specifications alone without the code, 
+it can do synthesis, and repair.)
 
 Consider the following definition inside an object `TestMax`.
 
@@ -113,7 +113,7 @@ defined the reference implementation
 .. code-block:: scala
 
   def rmax(x: BigInt, y: BigInt) = {
-    if (x <= y) x else y
+    if (x <= y) y else x
   }
 
 and then used as postcondition of `max` simply
@@ -175,32 +175,53 @@ conditions on input, we use the `require` clause.
     x <= res && y <= res && (res == x || res == y))
 
 This program verifies and indeed works correctly on
-non-negative 32-bit integers as inputs.  Curiously, if we
-instead require `x` and `y` to be non-positive (a seemingly
-symmetrical specification) , the resulting program
+non-negative 32-bit integers as inputs.  
 
-.. code-block:: scala
-
-  def max(x: Int, y: Int): Int = {
-    require(x <= 0 && y <= 0)
-    val d = x - y
-    if (d > 0) x
-    else y
-  } ensuring (res => 
-    x <= res && y <= res && (res == x || res == y))
-
-breaks with the counterexample
-
-.. code-block:: scala
-
-  x -> 0
-  y -> -2147483648
-
-The reason is that there is one more negative `Int` than
-the positive `Int`-s, so the subtraction can still overflow
-in this particular case. 
+**Question:** What if we restrict the inputs to `max` to be
+`a)` non-positive, or `b)` strictly negative? Modify the
+`require` clause for each case accordingly and explain the
+behavior of Leon.
 
 In the sequel we will mostly use `BigInt` types.
+
+Let us now look at synthesis. Suppose we omit
+the implementation of `max`, keeping the specification
+in the ensuring clause but using only a placeholder 
+`???[BigInt]` indicating we are looking for an unknown implementation
+of an integer type.
+
+.. code-block:: scala
+
+  def max(x: BigInt, y: BigInt): BigInt = {
+    ???[BigInt]
+  } ensuring(res => (res == x || res == y) &&  x <= res && y <= res)
+
+Leon can then automatically generate an implementation that satisfies
+this specification, such as 
+
+.. code-block:: scala
+
+  if (y <= x) {
+    x
+  } else {
+    y
+  }
+
+This is remarkable because we have much more freedom in
+writing specifications: we can explain the intention of the
+computation using a conjunction of orthogonal properties,
+and still obtain automatically an efficient implementation.
+
+As a remark, an expression with missing parts in Leon is
+an abbreviation for Leon's `choose` construct. Using `choose`
+we can write the above example as
+
+.. code-block:: scala
+
+  def max(x: BigInt, y: BigInt): BigInt = choose((res:BigInt) => 
+    (res == x || res == y) &&  x <= res && y <= res)
+
+We explain `choose` in more detail through our subsequent examples.
 
 Sorting Two Elements
 --------------------
@@ -211,7 +232,7 @@ write.
 
 .. code-block:: scala
 
-  import leon.lang._
+  import leon.lang.Set
   import leon.lang.synthesis._
   object Sort {
     def sort2(x : BigInt, y : BigInt) = choose{(res: (BigInt,BigInt)) =>
@@ -378,6 +399,55 @@ because sets ignore the duplicates, so
 
 is true. This shows that writing specifications can be subtle, but Leon's
 capabilities can help in the process as well.
+
+**Question:** Write the specification that requires the output triple
+to be strictly sorted using the `<` relation. Use `choose` to define
+the corresponding `sort3` function.
+Try executing such
+specifications for example inputs. What happens if you execute it
+when two of the elements are equal? Write the `require` clause
+to enforce the precondition that the initial elements are distinct. 
+Formulate in Leon the statement
+that for triples of distinct elements the result of strictly ordering
+them is unique and try to prove it.
+
+Interactive Exploration of Program Space
+----------------------------------------
+
+For larger programs, the search may take too long to find
+the solution and Leon will time out. In such cases, instead
+of invoking automated search, you can invoke Leon in the
+mode where the user directs each synthesis step to be
+provided. This is a great way to understand the rules that
+Leon currently has available for performing synthesis. 
+
+In the `web interface`, select on the synthesis task for
+`sort2` specification using the `choose` construct and
+select `Explore` instead of the automated `Search`. You can
+then navigate the space of programs interactively. Select
+the `Inequality split` between the two input variables. The
+system will apply this inference rule, and transform the
+program with one `choose` into a program that performs case
+analysis and then performs `choose` in each branch.  For
+individual branches we can try to resolve them using the
+`CEGIS` synthesis rule, which searches for small expressions
+and tries to find the one that satisfies the specification.
+We can use `Equivalent Inputs` and `Unused Inputs` as
+needed, since they are generally a good idea to apply. Once
+all sub-goals are resolved, select `Import Code`. Note
+that you can import any of the intermediate steps in exploration:
+the program with `choose` is valid in Leon, and it can even
+be executed, thanks to run-time constraint solving for the
+cases containing `choose`.
+
+**Question:** Use interactive exploration to synthesize
+`sort3` function by performing inequality splits in the
+interactive interface.  Given three variables, you will
+need to perform inequality splits on their pairs until
+the tuple to be returned is known thanks to the tests
+performed in the code. This is a somewhat tedious process,
+but relatively easy, and the result is guaranteed to be
+correct.
 
 Defining Lists and Their Properties
 -----------------------------------

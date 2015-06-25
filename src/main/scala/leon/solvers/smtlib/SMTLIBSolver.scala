@@ -52,7 +52,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
 
   /* Printing VCs */
 
-  protected val out: java.io.FileWriter = if (reporter.isDebugEnabled) {
+  protected lazy val out: Option[java.io.FileWriter] = if (reporter.isDebugEnabled) Some {
     val file = context.files.headOption.map(_.getName).getOrElse("NA")
     val n    = VCNumbers.getNext(targetName+file)
 
@@ -63,7 +63,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
     }
 
     new java.io.FileWriter(s"vcs/$targetName-$file-$n.smt2", false)
-  } else null
+  } else None
 
 
   /* Interruptible interface */
@@ -93,12 +93,17 @@ abstract class SMTLIBSolver(val context: LeonContext,
       case _ => None
     }
   }
+
   import scala.language.implicitConversions
   protected implicit def symbolToQualifiedId(s: SSymbol): QualifiedIdentifier = {
     QualifiedIdentifier(SMTIdentifier(s))
   }
 
-  protected def id2sym(id: Identifier): SSymbol = SSymbol(id.name+"!"+id.globalId)
+  protected val adtManager = new ADTManager(context)
+
+  protected val library = program.library
+
+  protected def id2sym(id: Identifier): SSymbol = SSymbol(id.name+"!"+id.id)
 
   protected def freshSym(id: Identifier): SSymbol = freshSym(id.name)
   protected def freshSym(name: String): SSymbol = id2sym(FreshIdentifier(name))
@@ -116,57 +121,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
   protected def hasError = errors.getB(()) contains true
   protected def addError() = errors += () -> true
 
-  /* A manager object for the Option type (since it is hard-coded for Maps) */
-  protected object OptionManager {
-    lazy val leonOption = program.library.Option.get
-    lazy val leonSome = program.library.Some.get
-    lazy val leonNone = program.library.None.get
-    def leonOptionType(tp: TypeTree) = AbstractClassType(leonOption, Seq(tp))
-
-    def mkLeonSome(e: Expr) = CaseClass(CaseClassType(leonSome, Seq(e.getType)), Seq(e))
-    def mkLeonNone(tp: TypeTree) = CaseClass(CaseClassType(leonNone, Seq(tp)), Seq())
-
-    def someTester(tp: TypeTree): SSymbol = {
-      val someTp = CaseClassType(leonSome, Seq(tp))
-      testers.getB(someTp) match {
-        case Some(s) => s
-        case None =>
-          declareOptionSort(tp)
-          someTester(tp)
-      }
-    }
-    def someConstructor(tp: TypeTree): SSymbol = {
-      val someTp = CaseClassType(leonSome, Seq(tp))
-      constructors.getB(someTp) match {
-        case Some(s) => s
-        case None =>
-          declareOptionSort(tp)
-          someConstructor(tp)
-      }
-    }
-    def someSelector(tp: TypeTree): SSymbol = {
-      val someTp = CaseClassType(leonSome, Seq(tp))
-      selectors.getB(someTp,0) match {
-        case Some(s) => s
-        case None =>
-          declareOptionSort(tp)
-          someSelector(tp)
-      }
-    }
-
-    def inlinedOptionGet(t : Term, tp: TypeTree): Term = {
-      FunctionApplication(SSymbol("ite"), Seq(
-        FunctionApplication(someTester(tp), Seq(t)),
-        FunctionApplication(someSelector(tp), Seq(t)),
-        declareVariable(FreshIdentifier("error_value", tp))
-      ))
-    }
-
-  }
-
-
   /* Helper functions */
-
 
   protected def normalizeType(t: TypeTree): TypeTree = t match {
     case ct: ClassType if ct.parent.isDefined => ct.parent.get
@@ -196,16 +151,6 @@ abstract class SMTLIBSolver(val context: LeonContext,
   protected def quantifiedTerm(quantifier: (SortedVar, Seq[SortedVar], Term) => Term, body: Expr): Term =
     quantifiedTerm(quantifier, variablesOf(body).toSeq, body)
 
-  // Corresponds to a smt map, not a leon/scala array
-  // Should NEVER escape past SMT-world
-  private[smtlib] case class RawArrayType(from: TypeTree, to: TypeTree) extends TypeTree
-
-  // Corresponds to a raw array value, which is coerced to a Leon expr depending on target type (set/array)
-  // Should NEVER escape past SMT-world
-  private[smtlib] case class RawArrayValue(keyTpe: TypeTree, elems: Map[Expr, Expr], default: Expr) extends Expr {
-    val getType = RawArrayType(keyTpe, default.getType)
-  }
-
   protected def fromRawArray(r: RawArrayValue, tpe: TypeTree): Expr = tpe match {
     case SetType(base) =>
       if (r.default != BooleanLiteral(false)) {
@@ -214,7 +159,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
       }
       require(r.keyTpe == base, s"Type error in solver model, expected $base, found ${r.keyTpe}")
 
-      finiteSet(r.elems.keySet, base)
+      FiniteSet(r.elems.keySet, base)
 
     case RawArrayType(from, to) =>
       r
@@ -225,12 +170,17 @@ abstract class SMTLIBSolver(val context: LeonContext,
     case MapType(from, to) =>
       // We expect a RawArrayValue with keys in from and values in Option[to],
       // with default value == None
-      require(from == r.keyTpe && r.default == OptionManager.mkLeonNone(to))
+      if (r.default.getType != library.noneType(to)) {
+        reporter.warning("Co-finite maps are not supported. (Default was "+r.default+")")
+        throw new IllegalArgumentException
+      }
+      require(r.keyTpe == from, s"Type error in solver model, expected $from, found ${r.keyTpe}")
+
       val elems = r.elems.flatMap {
         case (k, CaseClass(leonSome, Seq(x))) => Some(k -> x)
         case (k, _) => None
       }.toSeq
-      finiteMap(elems, from, to)
+      FiniteMap(elems, from, to)
 
     case _ =>
       unsupported("Unable to extract from raw array for "+tpe)
@@ -251,7 +201,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
           Sort(SMTIdentifier(SSymbol("Array")), Seq(declareSort(from), declareSort(to)))
 
         case MapType(from, to) =>
-          declareMapSort(from, to)
+          declareSort(RawArrayType(from, library.optionType(to)))
 
         case FunctionType(from, to) =>
           Sort(SMTIdentifier(SSymbol("Array")), Seq(declareSort(tupleTypeWrap(from)), declareSort(to)))
@@ -271,133 +221,27 @@ abstract class SMTLIBSolver(val context: LeonContext,
     }
   }
 
-  protected def declareOptionSort(of: TypeTree): Sort = {
-    declareSort(OptionManager.leonOptionType(of))
-  }
-
-  protected def declareMapSort(from: TypeTree, to: TypeTree): Sort = {
-    sorts.cachedB(MapType(from, to)) {
-      val m = freshSym("Map")
-
-      val toSort = declareOptionSort(to)
-      val fromSort = declareSort(from)
-
-      val arraySort = Sort(SMTIdentifier(SSymbol("Array")),
-        Seq(fromSort, toSort))
-      val cmd = DefineSort(m, Seq(), arraySort)
-
-      sendCommand(cmd)
-      Sort(SMTIdentifier(m), Seq())
-    }
-  }
-
-  protected def getHierarchy(ct: ClassType): (ClassType, Seq[CaseClassType]) = ct match {
-    case act: AbstractClassType =>
-      (act, act.knownCCDescendents)
-    case cct: CaseClassType =>
-      cct.parent match {
-        case Some(p) =>
-          getHierarchy(p)
-        case None =>
-          (cct, List(cct))
-      }
-  }
-
-  protected case class DataType(sym: SSymbol, cases: Seq[Constructor])
-  protected case class Constructor(sym: SSymbol, tpe: TypeTree, fields: Seq[(SSymbol, TypeTree)])
-
-  protected def findDependencies(t: TypeTree, dts: Map[TypeTree, DataType] = Map()): Map[TypeTree, DataType] = t match {
-    case ct: ClassType =>
-      val (root, sub) = getHierarchy(ct)
-
-      if (!(dts contains root) && !(sorts containsA root)) {
-        val sym = freshSym(ct.id)
-
-        val conss = sub.map { case cct =>
-          Constructor(freshSym(cct.id), cct, cct.fields.map(vd => (freshSym(vd.id), vd.getType)))
-        }
-
-        var cdts = dts + (root -> DataType(sym, conss))
-
-        // look for dependencies
-        for (ct <- root +: sub; f <- ct.fields) {
-          cdts ++= findDependencies(f.getType, cdts)
-        }
-
-        cdts
-      } else {
-        dts
-      }
-
-    case tt @ TupleType(bases) =>
-      if (!(dts contains t) && !(sorts containsA t)) {
-        val sym = freshSym("tuple"+bases.size)
-
-        val c = Constructor(freshSym(sym.name), tt, bases.zipWithIndex.map {
-          case (tpe, i) => (freshSym("_"+(i+1)), tpe)
-        })
-
-        var cdts = dts + (tt -> DataType(sym, Seq(c)))
-
-        for (b <- bases) {
-          cdts ++= findDependencies(b, cdts)
-        }
-        cdts
-      } else {
-        dts
-      }
-
-    case UnitType =>
-      if (!(dts contains t) && !(sorts containsA t)) {
-
-        val sym = freshSym("Unit")
-
-        dts + (t -> DataType(sym, Seq(Constructor(freshSym(sym.name), t, Nil))))
-      } else {
-        dts
-      }
-
-    case at @ ArrayType(base) =>
-      if (!(dts contains t) && !(sorts containsA t)) {
-        val sym = freshSym("array")
-
-        val c = Constructor(freshSym(sym.name), at, List(
-          (freshSym("size"), Int32Type),
-          (freshSym("content"), RawArrayType(Int32Type, base))
-        ))
-
-        val cdts = dts + (at -> DataType(sym, Seq(c)))
-
-        findDependencies(base, cdts)
-      } else {
-        dts
-      }
-
-    case _ =>
-      dts
-  }
-
   protected def declareDatatypes(datatypes: Map[TypeTree, DataType]): Unit = {
     // We pre-declare ADTs
     for ((tpe, DataType(sym, _)) <- datatypes) {
-      sorts += tpe -> Sort(SMTIdentifier(sym))
+      sorts += tpe -> Sort(SMTIdentifier(id2sym(sym)))
     }
 
     def toDecl(c: Constructor): SMTConstructor = {
-      val s = c.sym
+      val s = id2sym(c.sym)
 
       testers += c.tpe -> SSymbol("is-"+s.name)
       constructors += c.tpe -> s
 
       SMTConstructor(s, c.fields.zipWithIndex.map {
         case ((cs, t), i) =>
-          selectors += (c.tpe, i) -> cs
-          (cs, declareSort(t))
+          selectors += (c.tpe, i) -> id2sym(cs)
+          (id2sym(cs), declareSort(t))
       })
     }
 
     val adts = for ((tpe, DataType(sym, cases)) <- datatypes.toList) yield {
-      (sym, cases.map(toDecl))
+      (id2sym(sym), cases.map(toDecl))
     }
 
 
@@ -407,11 +251,16 @@ abstract class SMTLIBSolver(val context: LeonContext,
 
   protected def declareStructuralSort(t: TypeTree): Sort = {
     // Populates the dependencies of the structural type to define.
-    val datatypes = findDependencies(t)
+    adtManager.defineADT(t) match {
+      case Left(adts) =>
+        declareDatatypes(adts)
+        sorts.toB(t)
 
-    declareDatatypes(datatypes)
+      case Right(conflicts) =>
+        conflicts.foreach { declareStructuralSort }
+        declareStructuralSort(t)
+    }
 
-    sorts.toB(t)
   }
 
   protected def declareVariable(id: Identifier): SSymbol = {
@@ -440,42 +289,6 @@ abstract class SMTLIBSolver(val context: LeonContext,
     }
   }
 
-  protected def declareMapUnion(from: TypeTree, to: TypeTree): SSymbol = {
-    // FIXME cache results
-    val a = declareSort(from)
-    val b = declareSort(OptionManager.leonOptionType(to))
-    val arraySort = Sort(SMTIdentifier(SSymbol("Array")), Seq(a, b))
-
-    val f = freshSym("map_union")
-
-    sendCommand(DeclareFun(f, Seq(arraySort, arraySort), arraySort))
-
-    val v  = SSymbol("v")
-    val a1 = SSymbol("a1")
-    val a2 = SSymbol("a2")
-
-    val axiom = SMTForall(
-      SortedVar(a1, arraySort), Seq(SortedVar(a2, arraySort), SortedVar(v,a)),
-      Core.Equals(
-        ArraysEx.Select(
-          FunctionApplication(f: QualifiedIdentifier, Seq(a1: Term, a2: Term)),
-          v: Term
-        ),
-        Core.ITE(
-          FunctionApplication(
-            OptionManager.someTester(to),
-            Seq(ArraysEx.Select(a2: Term, v: Term))
-          ),
-          ArraysEx.Select(a2,v),
-          ArraysEx.Select(a1,v)
-        )
-      )
-    )
-
-    sendCommand(SMTAssert(axiom))
-    f
-  }
-
   /* Translate a Leon Expr to an SMTLIB term */
 
   protected def toSMT(e: Expr)(implicit bindings: Map[Identifier, Term]): Term = {
@@ -489,7 +302,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
 
         declareVariable(FreshIdentifier("Unit", UnitType))
 
-      case InfiniteIntegerLiteral(i) => if (i > 0) Ints.NumeralLit(i) else Ints.Neg(Ints.NumeralLit(-i))
+      case InfiniteIntegerLiteral(i) => if (i >= 0) Ints.NumeralLit(i) else Ints.Neg(Ints.NumeralLit(-i))
       case IntLiteral(i) => FixedSizeBitVectors.BitVectorLit(Hexadecimal.fromInt(i))
       case CharLiteral(c) => FixedSizeBitVectors.BitVectorLit(Hexadecimal.fromInt(c.toInt))
       case BooleanLiteral(v) => Core.BoolConst(v)
@@ -563,49 +376,69 @@ abstract class SMTLIBSolver(val context: LeonContext,
         val constructor = constructors.toB(tpe)
         FunctionApplication(constructor, Seq(ssize, newcontent))
 
-      /**
-       * ===== Map operations =====
-       */
-      case m @ FiniteMap(elems) =>
-        import OptionManager._
-        val mt @ MapType(_, to) = m.getType
-        val ms = declareSort(mt)
+      case ra @ RawArrayValue(keyTpe, elems, default) =>
+        val s = declareSort(ra.getType)
 
         var res: Term = FunctionApplication(
-          QualifiedIdentifier(SMTIdentifier(SSymbol("const")), Some(ms)),
-          List(toSMT(mkLeonNone(to)))
+          QualifiedIdentifier(SMTIdentifier(SSymbol("const")), Some(s)),
+          List(toSMT(default))
         )
         for ((k, v) <- elems) {
-          res = ArraysEx.Store(res, toSMT(k), toSMT(mkLeonSome(v)))
+          res = ArraysEx.Store(res, toSMT(k), toSMT(v))
         }
 
         res
 
+      case a @ FiniteArray(elems, oDef, size) =>
+        val tpe @ ArrayType(to) = normalizeType(a.getType)
+        declareSort(tpe)
+
+        val default: Expr = oDef.getOrElse(simplestValue(to))
+
+        val arr = toSMT(RawArrayValue(Int32Type, elems.map {
+          case (k, v) => IntLiteral(k) -> v
+        }, default))
+
+        FunctionApplication(constructors.toB(tpe), List(toSMT(size), arr))
+
+      /**
+       * ===== Map operations =====
+       */
+      case m @ FiniteMap(elems, _, _) =>
+        val mt @ MapType(from, to) = m.getType
+        val ms = declareSort(mt)
+
+        toSMT(RawArrayValue(from, elems.map {
+          case (k, v) => k -> CaseClass(library.someType(to), Seq(v))
+        }.toMap, CaseClass(library.noneType(to), Seq())))
+
+
       case MapGet(m, k) =>
-        import OptionManager._
-        val mt@MapType(_, vt) = m.getType
+        val mt @ MapType(from, to) = m.getType
         declareSort(mt)
         // m(k) becomes
-        // (Option$get (select m k))
-        inlinedOptionGet(ArraysEx.Select(toSMT(m), toSMT(k)), vt)
-
-      case MapIsDefinedAt(m, k) =>
-        import OptionManager._
-        val mt@MapType(_, vt) = m.getType
-        declareSort(mt)
-        // m.isDefinedAt(k) becomes
-        // (Option$isDefined (select m k))
+        // (Some-value (select m k))
         FunctionApplication(
-          someTester(vt),
+          selectors.toB((library.someType(to), 0)),
           Seq(ArraysEx.Select(toSMT(m), toSMT(k)))
         )
 
-      case MapUnion(m1, m2) =>
-        val MapType(vk, vt) = m1.getType
+      case MapIsDefinedAt(m, k) =>
+        val mt @ MapType(from, to) = m.getType
+        declareSort(mt)
+        // m.isDefinedAt(k) becomes
+        // (is-Some (select m k))
         FunctionApplication(
-          declareMapUnion(vk, vt),
-          Seq(toSMT(m1), toSMT(m2))
+          testers.toB(library.someType(to)),
+          Seq(ArraysEx.Select(toSMT(m), toSMT(k)))
         )
+
+      case MapUnion(m1, FiniteMap(elems, _, _)) =>
+        val mt @ MapType(f, t) = m1.getType
+
+        elems.foldLeft(toSMT(m1)) { case (m, (k,v)) =>
+          ArraysEx.Store(m, toSMT(k), toSMT(CaseClass(library.someType(t), Seq(v))))
+        }
 
       case p : Passes =>
         toSMT(matchToIfThenElse(p.asConstraint))
@@ -639,53 +472,43 @@ abstract class SMTLIBSolver(val context: LeonContext,
         val ar = toSMT(a)
         val br = toSMT(b)
 
-        val case1 = (
-          Core.And(Ints.LessThan(ar, Ints.NumeralLit(0)), Ints.LessThan(br, Ints.NumeralLit(0))),
-          Ints.Div(Ints.Neg(ar), Ints.Neg(br))
-        )
-        val case2 = (
-          Core.And(Ints.LessThan(ar, Ints.NumeralLit(0)), Ints.GreaterEquals(br, Ints.NumeralLit(0))),
-          Ints.Neg(Ints.Div(Ints.Neg(ar), br))
-        )
-        val case3 = (
-          Core.And(Ints.GreaterEquals(ar, Ints.NumeralLit(0)), Ints.LessThan(br, Ints.NumeralLit(0))),
-          Ints.Div(ar, br)
-        )
-        val case4 = (
-          Core.And(Ints.GreaterEquals(ar, Ints.NumeralLit(0)), Ints.GreaterEquals(br, Ints.NumeralLit(0))),
-          Ints.Div(ar, br)
-        )
-        
-        Core.ITE(case1._1, case1._2,
-          Core.ITE(case2._1, case2._2,
-            Core.ITE(case3._1, case3._2,
-              Core.ITE(case4._1, case4._2, Ints.NumeralLit(0)))))
+        Core.ITE(
+          Ints.GreaterEquals(ar, Ints.NumeralLit(0)),
+          Ints.Div(ar, br),
+          Ints.Neg(Ints.Div(Ints.Neg(ar), br)))
       }
-      case Modulo(a,b) => {
+      case Remainder(a,b) => {
         val q = toSMT(Division(a, b))
         Ints.Sub(toSMT(a), Ints.Mul(toSMT(b), q))
+      }
+      case Modulo(a,b) => {
+        Ints.Mod(toSMT(a), toSMT(b))
       }
       case LessThan(a,b) => a.getType match {
         case Int32Type => FixedSizeBitVectors.SLessThan(toSMT(a), toSMT(b))
         case IntegerType => Ints.LessThan(toSMT(a), toSMT(b))
+        case CharType => FixedSizeBitVectors.SLessThan(toSMT(a), toSMT(b))
       }
       case LessEquals(a,b) => a.getType match {
         case Int32Type => FixedSizeBitVectors.SLessEquals(toSMT(a), toSMT(b))
         case IntegerType => Ints.LessEquals(toSMT(a), toSMT(b))
+        case CharType => FixedSizeBitVectors.SLessEquals(toSMT(a), toSMT(b))
       }
       case GreaterThan(a,b) => a.getType match {
         case Int32Type => FixedSizeBitVectors.SGreaterThan(toSMT(a), toSMT(b))
         case IntegerType => Ints.GreaterThan(toSMT(a), toSMT(b))
+        case CharType => FixedSizeBitVectors.SGreaterThan(toSMT(a), toSMT(b))
       }
       case GreaterEquals(a,b) => a.getType match {
         case Int32Type => FixedSizeBitVectors.SGreaterEquals(toSMT(a), toSMT(b))
         case IntegerType => Ints.GreaterEquals(toSMT(a), toSMT(b))
+        case CharType => FixedSizeBitVectors.SGreaterEquals(toSMT(a), toSMT(b))
       }
       case BVPlus(a,b) => FixedSizeBitVectors.Add(toSMT(a), toSMT(b))
       case BVMinus(a,b) => FixedSizeBitVectors.Sub(toSMT(a), toSMT(b))
       case BVTimes(a,b) => FixedSizeBitVectors.Mul(toSMT(a), toSMT(b))
       case BVDivision(a,b) => FixedSizeBitVectors.SDiv(toSMT(a), toSMT(b))
-      case BVModulo(a,b) => FixedSizeBitVectors.SRem(toSMT(a), toSMT(b))
+      case BVRemainder(a,b) => FixedSizeBitVectors.SRem(toSMT(a), toSMT(b))
       case BVAnd(a,b) => FixedSizeBitVectors.And(toSMT(a), toSMT(b))
       case BVOr(a,b) => FixedSizeBitVectors.Or(toSMT(a), toSMT(b))
       case BVXOr(a,b) => FixedSizeBitVectors.XOr(toSMT(a), toSMT(b))
@@ -718,6 +541,9 @@ abstract class SMTLIBSolver(val context: LeonContext,
     case (_, UnitType) =>
       UnitLiteral()
 
+    case (FixedSizeBitVectors.BitVectorConstant(n, b), CharType) if b == BigInt(32) =>
+      CharLiteral(n.toInt.toChar)
+
     case (SHexadecimal(h), CharType) =>
       CharLiteral(h.toInt.toChar)
 
@@ -745,6 +571,13 @@ abstract class SMTLIBSolver(val context: LeonContext,
       variables.getA(s).map(_.toVariable).getOrElse {
         unsupported("Unknown symbol: "+s)
       }
+
+    case (FunctionApplication(SimpleSymbol(SSymbol("ite")), Seq(cond, thenn, elze)), t) =>
+      IfExpr(
+        fromSMT(cond, BooleanType),
+        fromSMT(thenn, t),
+        fromSMT(elze, t)
+      )
 
     case (FunctionApplication(SimpleSymbol(s), args), tpe) if constructors.containsB(s) =>
       constructors.toA(s) match {
@@ -805,10 +638,10 @@ abstract class SMTLIBSolver(val context: LeonContext,
 
   /* Send a command to the solver */
   def sendCommand(cmd: Command): CommandResponse = {
-    reporter.ifDebug { debug =>
-      SMTPrinter.printCommand(cmd, out)
-      out.write("\n")
-      out.flush()
+    out foreach { o =>
+      SMTPrinter.printCommand(cmd, o)
+      o.write("\n")
+      o.flush()
     }
     interpreter.eval(cmd) match {
       case err@ErrorResponse(msg) if !hasError && !interrupted =>
@@ -827,7 +660,7 @@ abstract class SMTLIBSolver(val context: LeonContext,
   def free() = {
     interpreter.free()
     context.interruptManager.unregisterForInterrupts(this)
-    reporter.ifDebug { _ => out.close() }
+    out foreach { _.close }
   }
 
   override def assertCnstr(expr: Expr): Unit = if(!hasError) {
@@ -853,27 +686,32 @@ abstract class SMTLIBSolver(val context: LeonContext,
     }
   }
 
-  override def getModel: Map[Identifier, Expr] = {
-    val syms = variables.bSet.toList
+  protected def getModel(filter: Identifier => Boolean): Map[Identifier, Expr] = {
+    val syms = variables.aSet.filter(filter).toList.map(variables.aToB)
     if (syms.isEmpty) {
       Map()
     } else {
-      val cmd: Command =
-        GetValue(syms.head,
-          syms.tail.map(s => QualifiedIdentifier(SMTIdentifier(s)))
-        )
+      val cmd: Command = GetValue(
+        syms.head,
+        syms.tail.map(s => QualifiedIdentifier(SMTIdentifier(s)))
+      )
 
+      sendCommand(cmd) match {
+        case GetValueResponseSuccess(valuationPairs) =>
 
-      val GetValueResponseSuccess(valuationPairs) = sendCommand(cmd)
+          valuationPairs.collect {
+            case (SimpleSymbol(sym), value) if variables.containsB(sym) =>
+              val id = variables.toA(sym)
 
-      valuationPairs.collect {
-        case (SimpleSymbol(sym), value) if variables.containsB(sym) =>
-          val id = variables.toA(sym)
-
-          (id, fromSMT(value, id.getType)(Map(), Map()))
-      }.toMap
+              (id, fromSMT(value, id.getType)(Map(), Map()))
+          }.toMap
+        case _ =>
+          Map() //FIXME improve this
+      }
     }
   }
+
+  override def getModel: Map[Identifier, Expr] = getModel( _ => true)
 
   override def push(): Unit = {
     constructors.push()

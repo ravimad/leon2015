@@ -3,8 +3,6 @@
 package leon
 
 import leon.utils._
-import solvers.SolverFactory
-import leon.transformations._
 
 object Main {
 
@@ -22,7 +20,6 @@ object Main {
       xlang.XLangAnalysisPhase,
       synthesis.SynthesisPhase,
       termination.TerminationPhase,
-      transformations.TimeStepsPhase,
       verification.AnalysisPhase,
       repair.RepairPhase,
       evaluators.EvaluationPhase
@@ -34,20 +31,25 @@ object Main {
     solvers.z3.FairZ3Component, MainComponent, SharedOptions, solvers.smtlib.SMTLIBCVC4Component
   )
 
+  /*
+   * This object holds the options that determine the selected pipeline of Leon.
+   * Please put any further such options here to have them print nicely in --help message.
+   */
   object MainComponent extends LeonComponent {
     val name = "main"
-    val description = "Options that determine the feature of Leon to be used (mutually exclusive). Default: verify"
+    val description = "Options that select the feature of Leon to be used. Default: verify"
 
-    val optTermination = LeonFlagOptionDef("termination", "Check program termination",                             false)
-    val optRepair      = LeonFlagOptionDef("repair",      "Repair selected functions",                             false)
-    val optSynthesis   = LeonFlagOptionDef("synthesis",   "Partial synthesis of choose() constructs",              false)
-    val optXLang       = LeonFlagOptionDef("xlang",       "Support for extra program constructs (imperative,...)", false)
-    val optNoop        = LeonFlagOptionDef("noop",        "No operation performed, just output program",           false)
-    val optVerify      = LeonFlagOptionDef("verify",      "Verify function contracts",                             true )
-    val optHelp        = LeonFlagOptionDef("help",        "Show help message",                                     false)
+    val optEval        = LeonStringOptionDef("eval", "Evaluate ground functions through code generation or evaluation (default)", "default", "[code|default]")
+    val optXLang       = LeonFlagOptionDef("xlang",       "Verification with support for extra program constructs (imperative,...)", false)
+    val optTermination = LeonFlagOptionDef("termination", "Check program termination. Can be used along --verify",                   false)
+    val optRepair      = LeonFlagOptionDef("repair",      "Repair selected functions",                                               false)
+    val optSynthesis   = LeonFlagOptionDef("synthesis",   "Partial synthesis of choose() constructs",                                false)
+    val optNoop        = LeonFlagOptionDef("noop",        "No operation performed, just output program",                             false)
+    val optVerify      = LeonFlagOptionDef("verify",      "Verify function contracts",                                               false)
+    val optHelp        = LeonFlagOptionDef("help",        "Show help message",                                                       false)
 
     override val definedOptions: Set[LeonOptionDef[Any]] =
-      Set(optTermination, optRepair, optSynthesis, optXLang, optNoop, optHelp, optVerify)
+      Set(optTermination, optRepair, optSynthesis, optXLang, optNoop, optHelp, optEval, optVerify)
 
   }
 
@@ -90,8 +92,6 @@ object Main {
   def processOptions(args: Seq[String]): LeonContext = {
 
     val initReporter = new DefaultReporter(Set())
-
-    val allOptions: Set[LeonOptionDef[Any]] = this.allOptions
 
     val options = args.filter(_.startsWith("--")).toSet
 
@@ -154,13 +154,14 @@ object Main {
     val repairF      = ctx.findOptionOrDefault(optRepair)
     val terminationF = ctx.findOptionOrDefault(optTermination)
     val verifyF      = ctx.findOptionOrDefault(optVerify)
-    val evalF        = ctx.findOption(SharedOptions.optEval)
+    val evalF        = ctx.findOption(optEval).isDefined
+    val analysisF    = verifyF && terminationF
 
     def debugTrees(title: String): LeonPhase[Program, Program] = {
       if (ctx.reporter.isDebugEnabled(DebugSectionTrees)) {
         PrintTreePhase(title)
       } else {
-        NoopPhase[Program]
+        NoopPhase[Program]()
       }
     }
 
@@ -185,14 +186,11 @@ object Main {
         if (noopF) RestoreMethods andThen FileOutputPhase
         else if (synthesisF) SynthesisPhase
         else if (repairF) RepairPhase
+        else if (analysisF) Pipeline.both(FunctionClosure andThen AnalysisPhase, TerminationPhase)
         else if (terminationF) TerminationPhase
         else if (xlangF) XLangAnalysisPhase
-        else if (evalF.isDefined) EvaluationPhase
-        else if (verifyF) {
-          //adding time instrumentation phase here
-          	RecursionCountPhase andThen FunctionClosure andThen AnalysisPhase
-        }        
-        else    NoopPhase()
+        else if (evalF) EvaluationPhase
+        else FunctionClosure andThen AnalysisPhase
       }
 
       pipeBegin andThen
@@ -252,6 +250,10 @@ object Main {
 
       // Run pipeline
       pipeline.run(ctx)(args.toList) match {
+        case (vReport: verification.VerificationReport, tReport: termination.TerminationReport) =>
+          ctx.reporter.info(vReport.summaryString)
+          ctx.reporter.info(tReport.summaryString)
+        
         case report: verification.VerificationReport =>
           ctx.reporter.info(report.summaryString)
 

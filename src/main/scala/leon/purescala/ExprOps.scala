@@ -31,7 +31,7 @@ object ExprOps {
    *
    * Usages of views makes the computation lazy. (which is useful for
    * contains-like operations)
-   */  
+   */
   def foldRight[T](f: (Expr, Seq[T]) => T)(e: Expr): T = {
     val rec = foldRight(f) _
 
@@ -311,11 +311,11 @@ object ExprOps {
   }
 
   def collect[T](matcher: Expr => Set[T])(e: Expr): Set[T] = {
-    foldRight[Set[T]]({ (e, subs) => matcher(e) ++ subs.foldLeft(Set[T]())(_ ++ _) } )(e)
+    foldRight[Set[T]]({ (e, subs) => matcher(e) ++ subs.flatten } )(e)
   }
   
   def collectPreorder[T](matcher: Expr => Seq[T])(e: Expr): Seq[T] = {
-    foldRight[Seq[T]]({ (e, subs) => matcher(e) ++ subs.foldLeft(Set[T]())(_ ++ _) } )(e)
+    foldRight[Seq[T]]({ (e, subs) => matcher(e) ++ subs.flatten } )(e)
   }
 
   def filter(matcher: Expr => Boolean)(e: Expr): Set[Expr] = {
@@ -349,14 +349,14 @@ object ExprOps {
   def variablesOf(expr: Expr): Set[Identifier] = {
     foldRight[Set[Identifier]]{
       case (e, subs) =>
-        val subvs = subs.foldLeft(Set[Identifier]())(_ ++ _)
+        val subvs = subs.flatten.toSet
 
         e match {
           case Variable(i) => subvs + i
           case LetDef(fd,_) => subvs -- fd.params.map(_.id)
           case Let(i,_,_) => subvs - i
-          case MatchExpr(_, cses) => subvs -- cses.map(_.pattern.binders).foldLeft(Set[Identifier]())((a, b) => a ++ b)
-          case Passes(_, _ , cses)   => subvs -- cses.map(_.pattern.binders).foldLeft(Set[Identifier]())((a, b) => a ++ b)
+          case MatchExpr(_, cses) => subvs -- cses.map(_.pattern.binders).flatten
+          case Passes(_, _ , cses)   => subvs -- cses.map(_.pattern.binders).flatten
           case Lambda(args, body) => subvs -- args.map(_.id)
           case Forall(args, body) => subvs -- args.map(_.id)
           case _ => subvs
@@ -385,25 +385,27 @@ object ExprOps {
   def directlyNestedFunDefs(e: Expr): Set[FunDef] = {
     foldRight[Set[FunDef]]{ 
       case (LetDef(fd,bd), _) => Set(fd)
-      case (_, subs) => subs.foldLeft(Set[FunDef]())(_ ++ _) 
+      case (_, subs) => subs.flatten.toSet
     }(e)
   }
   
-  def negate(expr: Expr) : Expr = (expr match {
-    case Let(i,b,e) => Let(i,b,negate(e))
-    case Not(e) => e
-    case Equals(e1,e2) => Equals(negate(e1),e2)
-    case Implies(e1,e2) => and(e1, negate(e2))
-    case Or(exs) => and(exs map negate: _*)
-    case And(exs) => or(exs map negate: _*)
-    case LessThan(e1,e2) => GreaterEquals(e1,e2)
-    case LessEquals(e1,e2) => GreaterThan(e1,e2)
-    case GreaterThan(e1,e2) => LessEquals(e1,e2)
-    case GreaterEquals(e1,e2) => LessThan(e1,e2)
-    case i @ IfExpr(c,e1,e2) => IfExpr(c, negate(e1), negate(e2))
-    case BooleanLiteral(b) => BooleanLiteral(!b)
-    case _ => Not(expr)
-  }).setPos(expr)
+  def negate(expr: Expr) : Expr = {
+    require(expr.getType == BooleanType)
+    (expr match {
+      case Let(i,b,e) => Let(i,b,negate(e))
+      case Not(e) => e
+      case Implies(e1,e2) => and(e1, negate(e2))
+      case Or(exs) => and(exs map negate: _*)
+      case And(exs) => or(exs map negate: _*)
+      case LessThan(e1,e2) => GreaterEquals(e1,e2)
+      case LessEquals(e1,e2) => GreaterThan(e1,e2)
+      case GreaterThan(e1,e2) => LessEquals(e1,e2)
+      case GreaterEquals(e1,e2) => LessThan(e1,e2)
+      case i @ IfExpr(c,e1,e2) => IfExpr(c, negate(e1), negate(e2))
+      case BooleanLiteral(b) => BooleanLiteral(!b)
+      case _ => Not(expr)
+    }).setPos(expr)
+  }
 
   // rewrites pattern-matching expressions to use fresh variables for the binders
   // ATTENTION: Unused, and untested
@@ -674,13 +676,21 @@ object ExprOps {
 
     type C = Seq[(Identifier, Expr)]
 
-    def lift(e: Expr, defs: C) = e match {
-      case Let(i, ex, b) => (b, (i, ex) +: defs)
+    def combiner(e: Expr, defs: Seq[C]): C = (e, defs) match {
+      case (Let(i, ex, b), Seq(inDef, inBody)) =>
+        inDef ++ ((i, ex) +: inBody)
+      case _ =>
+        defs.flatten
+    }
+
+    def noLet(e: Expr, defs: C) = e match {
+      case Let(_, _, b) => (b, defs)
       case _ => (e, defs)
     }
-    val (bd, defs) = genericTransform[C](noTransformer, lift, _.flatten)(Seq())(e)
 
-    defs.foldRight(bd){ case ((id, e), body) => let(id, e, body) }
+    val (bd, defs) = genericTransform[C](noTransformer, noLet, combiner)(Seq())(e)
+
+    defs.foldRight(bd){ case ((id, e), body) => Let(id, e, body) }
   }
 
   /**
@@ -813,7 +823,7 @@ object ExprOps {
       assert(ccd.fields.size == subps.size)
       val pairs = ccd.fields.map(_.id).toList zip subps.toList
       val subMaps = pairs.map(p => mapForPattern(CaseClassSelector(ccd, in, p._1), p._2))
-      val together = subMaps.foldLeft(Map.empty[Identifier,Expr])(_ ++ _)
+      val together = subMaps.flatten.toMap
       b match {
         case Some(id) => Map(id -> in) ++ together
         case None => together
@@ -824,7 +834,7 @@ object ExprOps {
       assert(tpes.size == subps.size)
 
       val maps = subps.zipWithIndex.map{case (p, i) => mapForPattern(tupleSelect(in, i+1, subps.size), p)}
-      val map = maps.foldLeft(Map.empty[Identifier,Expr])(_ ++ _)
+      val map = maps.flatten.toMap
       b match {
         case Some(id) => map + (id -> in)
         case None => map
@@ -1058,7 +1068,7 @@ object ExprOps {
 
   def genericTransform[C](pre:  (Expr, C) => (Expr, C),
                           post: (Expr, C) => (Expr, C),
-                          combiner: (Seq[C]) => C)(init: C)(expr: Expr) = {
+                          combiner: (Expr, Seq[C]) => C)(init: C)(expr: Expr) = {
 
     def rec(eIn: Expr, cIn: C): (Expr, C) = {
 
@@ -1066,26 +1076,26 @@ object ExprOps {
 
       val (newExpr, newC) = expr match {
         case t: Terminal =>
-          (expr, cIn)
+          (expr, ctx)
 
         case UnaryOperator(e, builder) =>
           val (e1, c) = rec(e, ctx)
           val newE = builder(e1).copiedFrom(expr)
 
-          (newE, combiner(Seq(c)))
+          (newE, combiner(newE, Seq(c)))
 
         case BinaryOperator(e1, e2, builder) =>
           val (ne1, c1) = rec(e1, ctx)
           val (ne2, c2) = rec(e2, ctx)
           val newE = builder(ne1, ne2).copiedFrom(expr)
 
-          (newE, combiner(Seq(c1, c2)))
+          (newE, combiner(newE, Seq(c1, c2)))
 
         case NAryOperator(es, builder) =>
           val (nes, cs) = es.map{ rec(_, ctx)}.unzip
           val newE = builder(nes).copiedFrom(expr)
 
-          (newE, combiner(cs))
+          (newE, combiner(newE, cs))
 
         case e =>
           sys.error("Expression "+e+" ["+e.getClass+"] is not extractable")
@@ -1097,7 +1107,7 @@ object ExprOps {
     rec(expr, init)
   }
 
-  private def noCombiner(subCs: Seq[Unit]) = ()
+  private def noCombiner(e: Expr, subCs: Seq[Unit]) = ()
   private def noTransformer[C](e: Expr, c: C) = (e, c)
 
   def simpleTransform(pre: Expr => Expr, post: Expr => Expr)(expr: Expr) = {
@@ -1238,9 +1248,7 @@ object ExprOps {
     case wp: WildcardPattern =>
       1
     case _ =>
-      p.subPatterns.foldLeft(1 + (if(p.binder.isDefined) 1 else 0)) {
-        case (s, p) => s + patternSize(p)
-      }
+      1 + (if(p.binder.isDefined) 1 else 0) + p.subPatterns.map(patternSize).sum
   }
 
   def formulaSize(e: Expr): Int = e match {
@@ -1248,10 +1256,10 @@ object ExprOps {
       1
 
     case ml: MatchExpr =>
-      ml.cases.foldLeft(formulaSize(ml.scrutinee)) {
-        case (s, MatchCase(p, og, rhs)) =>
-          s + formulaSize(rhs) + og.map(formulaSize).getOrElse(0) + patternSize(p)
-      }
+      formulaSize(ml.scrutinee) + ml.cases.map {
+        case MatchCase(p, og, rhs) =>
+          formulaSize(rhs) + og.map(formulaSize).getOrElse(0) + patternSize(p)
+      }.sum
 
     case UnaryOperator(e, builder) =>
       formulaSize(e)+1
@@ -1947,19 +1955,24 @@ object ExprOps {
     (fds.values.toSet, res2)
   }
 
-  def isListLiteral(e: Expr): Option[(TypeTree, List[Expr])] = e match {
-    case CaseClass(cct, args) =>
-      programOf(cct.classDef) flatMap { p => 
-        val lib = p.library 
-        if (Some(cct.classDef) == lib.Nil) {
-          Some((cct.tps.head, Nil))
-        } else if (Some(cct.classDef) == lib.Cons) {
-          isListLiteral(args(1)).map { case (_, t) =>
-            (cct.tps.head, args.head :: t)
-          } 
-        } else None
-      } 
-    case _ => None
+  def isListLiteral(e: Expr)(implicit pgm: Program): Option[(TypeTree, List[Expr])] = e match {
+    case CaseClass(CaseClassType(classDef, Seq(tp)), Nil) =>
+      for {
+        leonNil <- pgm.library.Nil
+        if classDef == leonNil
+      } yield {
+        (tp, Nil)
+      }
+    case CaseClass(CaseClassType(classDef, Seq(tp)), Seq(hd, tl)) =>
+      for {
+        leonCons <- pgm.library.Cons
+        if classDef == leonCons
+        (_, tlElems) <- isListLiteral(tl)
+      } yield {
+        (tp, hd :: tlElems)
+      }
+    case _ =>
+      None
   }
 
 

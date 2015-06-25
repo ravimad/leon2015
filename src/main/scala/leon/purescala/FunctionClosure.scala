@@ -15,6 +15,7 @@ object FunctionClosure extends TransformationPhase {
   val name = "Function Closure"
   val description = "Closing function with its scoping variables"
 
+  // TODO: Rewrite this phase
   /* I know, that's a lot of mutable variables */
   private var pathConstraints: List[Expr] = Nil
   private var enclosingLets: List[(Identifier, Expr)] = Nil
@@ -24,24 +25,25 @@ object FunctionClosure extends TransformationPhase {
 
   def apply(ctx: LeonContext, program: Program): Program = {
 
-    val newUnits = program.units.map { u => u.copy(modules = u.modules map { m =>
-      pathConstraints = Nil
-      enclosingLets  = Nil
-      newFunDefs  = Map()
-      topLevelFuns = Set()
-      parent = null
+    val newUnits = program.units.map { u => u.copy(defs = u.defs map { 
+      case m: ModuleDef =>
+        pathConstraints = Nil
+        enclosingLets  = Nil
+        newFunDefs  = Map()
+        topLevelFuns = Set()
+        parent = null
 
-      val funDefs = m.definedFunctions
-      funDefs.foreach(fd => {
-        parent = fd
-        pathConstraints = fd.precondition.toList
-        fd.body = fd.body.map(b => functionClosure(b, fd.params.map(_.id).toSet, Map(), Map()))
-      })
+        val funDefs = m.definedFunctions
+        funDefs.foreach(fd => {
+          parent = fd
+          pathConstraints = fd.precondition.toList
+          fd.body = fd.body.map(b => functionClosure(b, fd.params.map(_.id).toSet, Map(), Map()))
+        })
 
-      ModuleDef(m.id, m.defs ++ topLevelFuns, m.isStandalone )
+        ModuleDef(m.id, m.defs ++ topLevelFuns, m.isPackageObject )
+      case cd => cd
     })}
-    val res = Program(program.id, newUnits)
-    res
+    Program(newUnits)
   }
 
   private def functionClosure(expr: Expr, bindedVars: Set[Identifier], id2freshId: Map[Identifier, Identifier], fd2FreshFd: Map[FunDef, (FunDef, Seq[Variable])]): Expr = expr match {
@@ -61,8 +63,6 @@ object FunctionClosure extends TransformationPhase {
       val newFunDef = new FunDef(newFunId, fd.tparams, fd.returnType, newValDefs, fd.defType).copiedFrom(fd)
       topLevelFuns += newFunDef
       newFunDef.addAnnotation(fd.annotations.toSeq:_*) //TODO: this is still some dangerous side effects
-      newFunDef.setOwner(parent)
-      fd       .setOwner(parent)
       newFunDef.orig = Some(fd)
 
       def introduceLets(expr: Expr, fd2FreshFd: Map[FunDef, (FunDef, Seq[Variable])]): Expr = {
@@ -122,19 +122,6 @@ object FunctionClosure extends TransformationPhase {
                            args.map(arg => functionClosure(arg, bindedVars, id2freshId, fd2FreshFd)) ++ 
                            extraArgs.map(v => replace(id2freshId.map(p => (p._1.toVariable, p._2.toVariable)), v))).copiedFrom(fi)
     }
-    case n @ NAryOperator(args, recons) => {
-      val rargs = args.map(a => functionClosure(a, bindedVars, id2freshId, fd2FreshFd))
-      recons(rargs).copiedFrom(n)
-    }
-    case b @ BinaryOperator(t1,t2,recons) => {
-      val r1 = functionClosure(t1, bindedVars, id2freshId, fd2FreshFd)
-      val r2 = functionClosure(t2, bindedVars, id2freshId, fd2FreshFd)
-      recons(r1,r2).copiedFrom(b)
-    }
-    case u @ UnaryOperator(t,recons) => {
-      val r = functionClosure(t, bindedVars, id2freshId, fd2FreshFd)
-      recons(r).copiedFrom(u)
-    }
     case m @ MatchExpr(scrut,cses) => {
       val scrutRec = functionClosure(scrut, bindedVars, id2freshId, fd2FreshFd)
       val csesRec = cses.map{ cse =>
@@ -153,7 +140,20 @@ object FunctionClosure extends TransformationPhase {
       case None => v
       case Some(nid) => Variable(nid)
     }
-    case t if t.isInstanceOf[Terminal] => t
+    case n @ NAryOperator(args, recons) => {
+      val rargs = args.map(a => functionClosure(a, bindedVars, id2freshId, fd2FreshFd))
+      recons(rargs).copiedFrom(n)
+    }
+    case b @ BinaryOperator(t1,t2,recons) => {
+      val r1 = functionClosure(t1, bindedVars, id2freshId, fd2FreshFd)
+      val r2 = functionClosure(t2, bindedVars, id2freshId, fd2FreshFd)
+      recons(r1,r2).copiedFrom(b)
+    }
+    case u @ UnaryOperator(t,recons) => {
+      val r = functionClosure(t, bindedVars, id2freshId, fd2FreshFd)
+      recons(r).copiedFrom(u)
+    }
+    case t : Terminal => t
     case unhandled => scala.sys.error("Non-terminal case should be handled in FunctionClosure: " + unhandled)
   }
 

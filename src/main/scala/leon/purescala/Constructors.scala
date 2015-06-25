@@ -120,10 +120,7 @@ object Constructors {
       MatchExpr(scrutinee, filtered)
     else 
       Error(
-        cases match {
-          case Seq(hd, _*) => hd.rhs.getType
-          case Seq() => Untyped
-        },
+        cases.headOption.map{ _.rhs.getType }.getOrElse(Untyped),
         "No case matches the scrutinee"
       )
   } 
@@ -187,17 +184,9 @@ object Constructors {
     case _                          => Implies(lhs, rhs)
   }
 
-  def finiteSet(els: Set[Expr], tpe: TypeTree) = {
-    FiniteSet(els, tpe)
-  }
-
   def finiteMultiset(els: Seq[Expr], tpe: TypeTree) = {
     if (els.isEmpty) EmptyMultiset(tpe)
     else NonemptyMultiset(els)
-  }
-
-  def finiteMap(els: Seq[(Expr, Expr)], keyType: TypeTree, valueType: TypeTree) = {
-    FiniteMap(els, keyType, valueType)
   }
 
   def finiteArray(els: Seq[Expr]): Expr = {
@@ -235,20 +224,6 @@ object Constructors {
     Lambda(args, body)
   }
 
-  def application(fn: Expr, realArgs: Seq[Expr]) = fn match {
-    case Lambda(formalArgs, body) =>
-      val (inline, notInline) = formalArgs.map{_.id}.zip(realArgs).partition {
-        case (form, _) => count{
-          case Variable(`form`) => 1
-          case _ => 0
-        }(body) <= 1
-      }
-      val newBody = replaceFromIDs(inline.toMap, body)
-      val (ids, es) = notInline.unzip
-      letTuple(ids, tupleWrap(es), newBody)
-    case _ => Application(fn, realArgs)
-  }
-
   def equality(a: Expr, b: Expr) = {
     if (a == b && isDeterministic(a)) {
       BooleanLiteral(true)
@@ -256,6 +231,26 @@ object Constructors {
       Equals(a, b)
     }
   }
+
+  def application(fn: Expr, realArgs: Seq[Expr]) = fn match {
+     case Lambda(formalArgs, body) =>
+      var defs: Seq[(Identifier, Expr)] = Seq()
+
+      val subst = formalArgs.zip(realArgs).map {
+        case (ValDef(from, _), to:Variable) =>
+          from -> to
+        case (ValDef(from, _), e) =>
+          val fresh = from.freshen
+          defs :+= (fresh -> e)
+          from -> Variable(fresh)
+      }.toMap
+
+      val (ids, bds) = defs.unzip
+
+      letTuple(ids, tupleWrap(bds), replaceFromIDs(subst, body))
+    case _ =>
+      Application(fn, realArgs)
+   }
 
   def plus(lhs: Expr, rhs: Expr): Expr = (lhs, rhs) match {
     case (InfiniteIntegerLiteral(bi), _) if bi == 0 => rhs
@@ -269,6 +264,8 @@ object Constructors {
   def minus(lhs: Expr, rhs: Expr): Expr = (lhs, rhs) match {
     case (_, InfiniteIntegerLiteral(bi)) if bi == 0 => lhs
     case (_, IntLiteral(0)) => lhs
+    case (InfiniteIntegerLiteral(bi), _) if bi == 0 => UMinus(rhs)
+    case (IntLiteral(0), _) => BVUMinus(rhs)
     case (IsTyped(_, IntegerType), IsTyped(_, IntegerType)) => Minus(lhs, rhs)
     case (IsTyped(_, Int32Type), IsTyped(_, Int32Type)) => BVMinus(lhs, rhs)
   }

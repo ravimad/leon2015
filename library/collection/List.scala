@@ -30,8 +30,9 @@ sealed abstract class List[T] {
     case Nil() => that
     case Cons(x, xs) => Cons(x, xs ++ that)
   }) ensuring { res =>
-    (res.content == this.content ++ that.content) && 
-    (res.size == this.size + that.size)
+    (res.content == this.content ++ that.content) &&
+    (res.size == this.size + that.size) &&
+    (that != Nil[T]() || res == this)
   }
 
   def head: T = {
@@ -125,19 +126,22 @@ sealed abstract class List[T] {
     )
   }
 
-  private def chunk0(s: BigInt, l: List[T], acc: List[T], res: List[List[T]], s0: BigInt): List[List[T]] = l match {
-    case Nil() =>
-      if (acc.size > 0) {
-        res :+ acc
-      } else {
-        res
-      }
-    case Cons(h, t) =>
-      if (s0 == BigInt(0)) {
-        chunk0(s, l, Nil(), res :+ acc, s)
-      } else {
-        chunk0(s, t, acc :+ h, res, s0-1)
-      }
+  private def chunk0(s: BigInt, l: List[T], acc: List[T], res: List[List[T]], s0: BigInt): List[List[T]] = {
+    require(s > 0 && s0 >= 0)
+    l match {
+      case Nil() =>
+        if (acc.size > 0) {
+          res :+ acc
+        } else {
+          res
+        }
+      case Cons(h, t) =>
+        if (s0 == BigInt(0)) {
+          chunk0(s, t, Cons(h, Nil()), res :+ acc, s-1)
+        } else {
+          chunk0(s, t, acc :+ h, res, s0-1)
+        }
+    }
   }
 
   def chunks(s: BigInt): List[List[T]] = {
@@ -223,11 +227,11 @@ sealed abstract class List[T] {
           case Some(i) => Some(i+1)
         }
       }
-  }} ensuring { _.isDefined == this.contains(e) }
+    }} ensuring { res => !res.isDefined || (this.content contains e) }
 
   def init: List[T] = {
     require(!isEmpty)
-    (this match {
+    ((this : @unchecked) match {
       case Cons(h, Nil()) =>
         Nil[T]()
       case Cons(h, t) =>
@@ -240,7 +244,7 @@ sealed abstract class List[T] {
 
   def last: T = {
     require(!isEmpty)
-    this match {
+    (this : @unchecked) match {
       case Cons(h, Nil()) => h
       case Cons(_, t) => t.last
     }
@@ -250,14 +254,14 @@ sealed abstract class List[T] {
     case Cons(h, t) =>
       t.lastOption.orElse(Some(h))
     case Nil() =>
-      None()
+      None[T]()
   }} ensuring { _.isDefined != this.isEmpty }
 
   def firstOption: Option[T] = { this match {
     case Cons(h, t) =>
       Some(h)
     case Nil() =>
-      None()
+      None[T]()
   }} ensuring { _.isDefined != this.isEmpty }
 
   def unique: List[T] = this match {
@@ -285,15 +289,24 @@ sealed abstract class List[T] {
     (take(c), drop(c))
   }
 
-  def insertAt(pos: BigInt, l: List[T]): List[T] = {
-    if(pos < 0) {
-      insertAt(size + pos, l)
-    } else if(pos == BigInt(0)) {
+  def updated(i: BigInt, y: T): List[T] = {
+    require(0 <= i && i < this.size)
+    this match {
+      case Cons(x, tail) if i == 0 =>
+        Cons[T](y, tail)
+      case Cons(x, tail) =>
+        Cons[T](x, tail.updated(i - 1, y))
+    }
+  }
+
+  private def insertAtImpl(pos: BigInt, l: List[T]): List[T] = {
+    require(0 <= pos && pos <= size)
+    if(pos == BigInt(0)) {
       l ++ this
     } else {
       this match {
         case Cons(h, t) =>
-          Cons(h, t.insertAt(pos-1, l))
+          Cons(h, t.insertAtImpl(pos-1, l))
         case Nil() =>
           l
       }
@@ -303,15 +316,34 @@ sealed abstract class List[T] {
     res.content == this.content ++ l.content
   }
 
-  def replaceAt(pos: BigInt, l: List[T]): List[T] = {
+  def insertAt(pos: BigInt, l: List[T]): List[T] = {
+    require(-pos <= size && pos <= size)
     if(pos < 0) {
-      replaceAt(size + pos, l)
-    } else if(pos == BigInt(0)) {
+      insertAtImpl(size + pos, l)
+    } else {
+      insertAtImpl(pos, l)
+    }
+  } ensuring { res =>
+    res.size == this.size + l.size &&
+    res.content == this.content ++ l.content
+  }
+
+  def insertAt(pos: BigInt, e: T): List[T] = {
+    require(-pos <= size && pos <= size)
+    insertAt(pos, Cons[T](e, Nil()))
+  } ensuring { res =>
+    res.size == this.size + 1 &&
+    res.content == this.content ++ Set(e)
+  }
+
+  private def replaceAtImpl(pos: BigInt, l: List[T]): List[T] = {
+    require(0 <= pos && pos <= size)
+    if (pos == BigInt(0)) {
       l ++ this.drop(l.size)
     } else {
       this match {
         case Cons(h, t) =>
-          Cons(h, t.replaceAt(pos-1, l))
+          Cons(h, t.replaceAtImpl(pos-1, l))
         case Nil() =>
           l
       }
@@ -320,13 +352,22 @@ sealed abstract class List[T] {
     res.content.subsetOf(l.content ++ this.content)
   }
 
-  def rotate(s: BigInt): List[T] = {
-    if (s < 0) {
-      rotate(size + s)
-    } else if (s > size) {
-      rotate(s - size)
+  def replaceAt(pos: BigInt, l: List[T]): List[T] = {
+    require(-pos <= size && pos <= size)
+    if(pos < 0) {
+      replaceAtImpl(size + pos, l)
     } else {
-      drop(s) ++ take(s)
+      replaceAtImpl(pos, l)
+    }
+  } ensuring { res =>
+    res.content.subsetOf(l.content ++ this.content)
+  }
+
+  def rotate(s: BigInt): List[T] = {
+    if (isEmpty) {
+      Nil[T]()
+    } else {
+      drop(s mod size) ++ take(s mod size)
     }
   } ensuring { res =>
     res.size == this.size
@@ -410,7 +451,10 @@ sealed abstract class List[T] {
     case Nil() => None[T]()
     case Cons(h, t) if p(h) => Some(h)
     case Cons(_, t) => t.find(p)
-  }} ensuring { _.isDefined == exists(p) }
+  }} ensuring { res => res match {
+    case Some(r) => (content contains r) && p(r)
+    case None() => true
+  }}
 
   def groupBy[R](f: T => R): Map[R, List[T]] = this match {
     case Nil() => Map.empty[R, List[T]]
@@ -449,9 +493,15 @@ sealed abstract class List[T] {
 
 }
 
-@ignore
 object List {
-  def apply[T](elems: T*): List[T] = ???
+  @ignore
+  def apply[T](elems: T*): List[T] = {
+    var l: List[T] = Nil[T]()
+    for (e <- elems) {
+      l = Cons(e, l)
+    }
+    l.reverse
+  }
 }
 
 @library
@@ -602,6 +652,53 @@ object ListSpecs {
   @induct
   def scanVsFoldRight[A,B](l: List[A], z: B, f: (A,B) => B): Boolean = {
     l.scanRight(z)(f).head == l.foldRight(z)(f)
+  }.holds
+
+  // A lemma about `append` and `updated`
+  def appendUpdate[T](l1: List[T], l2: List[T], i: BigInt, y: T): Boolean = {
+    require(0 <= i && i < l1.size + l2.size)
+    // induction scheme
+    (l1 match {
+      case Nil() => true
+      case Cons(x, xs) => if (i == 0) true else appendUpdate[T](xs, l2, i - 1, y)
+    }) &&
+      // lemma
+      ((l1 ++ l2).updated(i, y) == (
+        if (i < l1.size)
+          l1.updated(i, y) ++ l2
+        else
+          l1 ++ l2.updated(i - l1.size, y)))
+  }.holds
+
+  // a lemma about `append`, `take` and `drop`
+  def appendTakeDrop[T](l1: List[T], l2: List[T], n: BigInt): Boolean = {
+    //induction scheme
+    (l1 match {
+      case Nil() => true
+      case Cons(x, xs) => if (n <= 0) true else appendTakeDrop[T](xs, l2, n - 1)
+    }) &&
+      // lemma
+      ((l1 ++ l2).take(n) == (
+        if (n < l1.size) l1.take(n)
+        else if (n > l1.size) l1 ++ l2.take(n - l1.size)
+        else l1)) &&
+        ((l1 ++ l2).drop(n) == (
+          if (n < l1.size) l1.drop(n) ++ l2
+          else if (n > l1.size) l2.drop(n - l1.size)
+          else l2))
+  }.holds
+
+  // A lemma about `append` and `insertAt`
+  def appendInsert[T](l1: List[T], l2: List[T], i: BigInt, y: T): Boolean = {
+    require(0 <= i && i <= l1.size + l2.size)
+    (l1 match {
+      case Nil() => true
+      case Cons(x, xs) => if (i == 0) true else appendInsert[T](xs, l2, i - 1, y)
+    }) &&
+      // lemma
+      ((l1 ++ l2).insertAt(i, y) == (
+        if (i < l1.size) l1.insertAt(i, y) ++ l2
+        else l1 ++ l2.insertAt((i - l1.size), y)))
   }.holds
 
 }

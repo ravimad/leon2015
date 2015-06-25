@@ -3,6 +3,7 @@
 package leon
 package solvers.smtlib
 
+import leon.purescala.Common.Identifier
 import purescala._
 import Expressions._
 import ExprOps._
@@ -19,7 +20,7 @@ import smtlib.theories.Core.Equals
 abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program) extends SMTLIBCVC4Solver(context, program) {
 
   override def targetName = "cvc4-quantified"
-  
+
   private var currentFunDef: Option[FunDef] = None
   def refersToCurrent(fd: FunDef) = {
     (currentFunDef contains fd) || (currentFunDef exists {
@@ -28,6 +29,8 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
   }
 
   private val typedFunDefExplorationLimit = 10000
+
+  protected val allowQuantifiedAssersions: Boolean
 
   override def declareFunction(tfd: TypedFunDef): SSymbol = {
     val (funs, exploredAll) = typedTransitiveCallees(Set(tfd), Some(typedFunDefExplorationLimit))
@@ -78,8 +81,8 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
       )
     }
 
-    val smtBodies = smtFunDecls map { case FunDec(sym, _, _) =>
-      val tfd = functions.toA(sym)
+    val smtBodies = smtFunDecls map { case f =>
+      val tfd = functions.toA(f.name)
       try {
         toSMT(tfd.body.get)(tfd.params.map { p =>
           (p.id, id2sym(p.id): Term)
@@ -94,7 +97,7 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
     if (smtFunDecls.nonEmpty) {
       sendCommand(DefineFunsRec(smtFunDecls, smtBodies))
       // Assert contracts for defined functions
-      for {
+      if (allowQuantifiedAssersions) for {
         // If we encounter a function that does not refer to the current function,
         // it is sound to assume its contracts for all inputs
         tfd <- withParams if !refersToCurrent(tfd.fd)
@@ -137,7 +140,7 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
 
     // We want to check if the negation of the vc is sat under inductive hyp.
     // So we need to see if (indHyp /\ !vc) is satisfiable
-    liftLets(matchToIfThenElse(and(andJoin(inductiveHyps), not(cond))))
+    liftLets(matchToIfThenElse(andJoin(inductiveHyps :+ not(cond))))
 
   }
 
@@ -147,6 +150,11 @@ abstract class SMTLIBCVC4QuantifiedSolver(context: LeonContext, program: Program
   override def assertVC(vc: VC) = {
     currentFunDef = Some(vc.fd)
     assertCnstr(withInductiveHyp(vc.condition))
+  }
+
+  override def getModel: Map[Identifier, Expr] = {
+    val filter = currentFunDef.map{ _.params.map{_.id}.toSet }.getOrElse( (_:Identifier) => true )
+    getModel(filter)
   }
 
 }
