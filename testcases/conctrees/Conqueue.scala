@@ -41,14 +41,29 @@ object Conqueue {
       case _ => true
     }
 
-    val zeroPreceedsLazy: Boolean = this match {
-      case Spine(h, PushLazy(_, q)) =>
-        (h == Empty[T]()) && q.zeroPreceedsLazy // the position before pushlazy is Empty
-      case Spine(h, rear) =>
-        (h == Empty[T]()) || rear.zeroPreceedsLazy // note: the disjunction here.
-      case Tip(_) => true
-      case _ => false // this implies that a ConQ cannot start with a lazy closure
-    }
+    val zeroPreceedsLazy: Boolean = {
+      this match {
+        case Spine(h, PushLazy(_, q)) =>
+          (h == Empty[T]()) && q.zeroPreceedsLazy // the position before pushlazy is Empty
+        case Spine(Empty(), rear) =>
+          rear.weakZeroPreceedsLazy // here we have seen a zero
+        case Spine(h, rear) => 
+          rear.zeroPreceedsLazy  //here we have not seen a zero 
+        case Tip(_) => true
+        case _ => false // this implies that a ConQ cannot start with a lazy closure
+      }
+    } ensuring (res => !res || weakZeroPreceedsLazy) //zeroPreceedsLazy is a stronger property
+    
+    val weakZeroPreceedsLazy: Boolean = {
+      this match {
+        case Spine(h, PushLazy(_, q)) =>
+          q.zeroPreceedsLazy
+        case Spine(_, rear) =>
+          rear.weakZeroPreceedsLazy           
+        case Tip(_) => true
+        case _ => false // this implies that a ConQ cannot start with a lazy closure
+      }
+    } //ensuring (res => !zeroPreceedsLazy || res) //zeroPreceedsLazy is a stronger property
 
     /*val spineInv = this match {
       case 
@@ -56,16 +71,7 @@ object Conqueue {
 
     val valid = {
       zeroPreceedsLazy && pushLazyInv
-    }
-
-    val weakZeroPreceedsLazy: Boolean = this match {
-      case Spine(h, PushLazy(_, q)) =>
-        q.zeroPreceedsLazy
-      case Spine(_, rear) =>
-        rear.weakZeroPreceedsLazy
-      case Tip(_) => true
-      case _ => false // this implies that a ConQ cannot start with a lazy closure
-    }
+    }     
 
     val weakValid = {
       weakZeroPreceedsLazy && pushLazyInv
@@ -102,7 +108,7 @@ object Conqueue {
   case class PushLazy[T](ys: Conc[T], xs: Spine[T]) extends ConQ[T]
 
   def queueScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
-    xs.valid && sch.valid &&
+    xs.valid && sch.weakValid &&
       xs.firstLazyClosure == sch.firstLazyClosure && //sch is the first lazy closure of 's'
       xs.suffix(sch) //sch is a suffix of s
   }
@@ -136,7 +142,7 @@ object Conqueue {
 
   def pushLeftLazy[T](ys: Conc[T], xs: Spine[T]): (Spine[T], BigInt) = {
     require(!ys.isEmpty && xs.valid) // &&
-    //(xs.head.isEmpty || xs.head.level == ys.level)) note required now
+    //(xs.head.isEmpty || xs.head.level == ys.level)) 
 
     xs match {
       case Spine(Empty(), rear) => //note: 'rear' is not materialized here         
@@ -206,18 +212,24 @@ object Conqueue {
     val (fsched, fq, t2) = pay(nsched, nq)
     (Wrapper(fq, fsched), t1 + t2 + 1)
     
-  } ensuring(res => res._1.valid && res._2 <= 6)
-  
-  def pay[T](sched: ConQ[T], xs: ConQ[T]) : (ConQ[T], ConQ[T], BigInt) = {
-    requrie(weakScheduleProperty(xs, sched))
-    sched match {      
-      case Spine(_, pl @ PushLazy(elem, q)) =>
-        val (Spine(_, matr), nxs, matt) = materialize(pl, xs)
+  } ensuring(res => res._1.valid && res._2 <= 6)*/
+
+  def pay[T](sched: ConQ[T], xs: ConQ[T]): (ConQ[T], ConQ[T], BigInt) = {
+    require(queueScheduleProperty(xs, sched) ||
+      (sched match {
+        case Spine(_, PushLazy(_, _)) => 
+          xs == sched && weakScheduleProperty(xs, sched)
+        case _ => false        
+      }))
+    sched match {
+      case s @ Spine(_, PushLazy(_, _)) =>
+        val (Spine(_, matr), nxs, matt) = materialize(s, xs)
         (matr, nxs, matt + 1)
       case Spine(_, rear) =>
         (rear, xs, 1)
-      case Tip(_) => 
-        (sched, xs, 1)
+      case Tip(_) =>
+        (sched, xs, 1) // here every thing is concretized
     }
-  } ensuring(res => queueScheduleProperty(res._2, res._1) && res._3 <= 3)*/
+  } ensuring (res => queueScheduleProperty(res._2, res._1) && 
+		  			res._3 <= 3)
 }
