@@ -166,6 +166,7 @@ object Conqueue {
     }
   } ensuring (res => res._1.isSpine &&
     (res._1.valid || (res._1.rear == xs.rear)) &&
+    (res._1.valid || (res._1.weakValid && res._1.firstLazyClosure == xs.firstLazyClosure)) &&
     res._2 <= 1) // this invariant implies that the result if invalid is of the form Spine(t, PushLazy(...)) 
 
   /**
@@ -200,25 +201,25 @@ object Conqueue {
       queueScheduleProperty(res, Spine(h, pushLeftLazy(elem, q)._1)) // a stronger property will be satisfied here    
   })
 
-  /*def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
+  def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
     require(w.valid)
     
     val (nq, t1) = pushLeft(ys, w.queue) // the queue invariant could be temporarily broken
     // update the schedule
     val nsched = nq match {
-      case Spine(_, _ : PushLazy) => nq
+      case Spine(_, PushLazy(_, _)) => nq
       case _ => w.schedule
     } //here, we need to ensure that new schedule is a suffix of the new queue    
     val (fsched, fq, t2) = pay(nsched, nq)
     (Wrapper(fq, fsched), t1 + t2 + 1)
     
-  } ensuring(res => res._1.valid && res._2 <= 6)*/
+  } ensuring(res => res._1.valid && res._2 <= 6)
 
   def pay[T](sched: ConQ[T], xs: ConQ[T]): (ConQ[T], ConQ[T], BigInt) = {
     require(queueScheduleProperty(xs, sched) ||
       (sched match {
         case Spine(_, PushLazy(_, _)) => 
-          xs == sched && weakScheduleProperty(xs, sched)
+          weakScheduleProperty(xs, sched)
         case _ => false        
       }))
     sched match {
