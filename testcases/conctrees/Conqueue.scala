@@ -254,45 +254,41 @@ object Conqueue {
     //queueScheduleProperty(res, Spine(h, pushLeftLazy(elem, q)._1)) // a stronger property will be satisfied here    
   })
 
-  /*def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
+  def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
     require(w.valid)
 
     val (nq, t1) = pushLeft(ys, w.queue) // the queue invariant could be temporarily broken
     // update the schedule
-    val nsched = nq match {
-      case Spine(_, PushLazy(_, _)) => Cons[ConQ[T]](nq, w.schedule)
-      case _ =>
-        assert(schedulesProperty(w.queue, w.schedule))
+    val nschs = nq match {
+      case Spine(_, PushLazy(_, nest)) =>
+        //assert(schedulesProperty(nest, w.schedule))
+        Cons[ConQ[T]](nq, w.schedule)                
+      case Tip(_) =>
+        //assert(weakSchedulesProperty(nq, w.schedule))
         w.schedule
-    } //here, we need to ensure that new schedule is a suffix of the new queue    
-    val (fsched, fq, t2) = pay(nsched, nq)
-    (Wrapper(fq, fsched), t1 + t2 + 1)
+      case Spine(_, rear) =>               
+        w.schedule
+    }     
+    (w, 1)
+    /*val (fschs, fq, t2) = pay(nschs, nq)
+    (Wrapper(fq, fschs), t1 + t2 + 1)*/
 
   } //ensuring(res => res._1.valid && res._2 <= 6)
 
-  def pay[T](sched: List[ConQ[T]], xs: ConQ[T]): (List[ConQ[T]], ConQ[T], BigInt) = {
-    require(
-      //        /queueScheduleProperty(xs, sched) ||
-      sched match {
-        case Cons(s @ Spine(_, PushLazy(_, nestq)), tail) =>
-          weakScheduleProperty(xs, s) &&
-            schedulesProperty(nestq, tail)
-        case Nil() =>
-          xs.valid
-        case _ => false
-      })
-    sched match {
-      case Cons(s @ Spine(_, PushLazy(_, nestq)), rest) =>
-        val (Spine(_, matr), nxs, matt) = materialize(s, xs)
+  def pay[T](schs: List[ConQ[T]], xs: ConQ[T]): (List[ConQ[T]], ConQ[T], BigInt) = {
+    require(weakSchedulesProperty(xs, schs))
+    schs match {
+      case c @ Cons(pl @ PushLazy(_, nestq), rest) =>
+        val (matr, nxs, matt) = materialize(pl, xs, c)
         matr match {
-          case Spine(_, PushLazy(_, _)) =>
-            (Cons(matr, rest), nxs, matt + 1)
-          case Spine(_, rear) =>
+          case Spine(_, pl @ PushLazy(_, _)) =>
+            (Cons(pl, rest), nxs, matt + 1)
+          case _ =>
             (rest, nxs, matt + 1)
         }
       case Nil() =>
         (Nil(), xs, 1) // here every thing is concretized
     }
-  }*/ /*ensuring (res => schedulesProperty(res._2, res._1) && 
-		  			res._3 <= 3)*/
+  } ensuring (res => schedulesProperty(res._2, res._1) &&
+    res._3 <= 3)
 }
