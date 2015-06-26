@@ -47,19 +47,19 @@ object Conqueue {
           (h == Empty[T]()) && q.zeroPreceedsLazy // the position before pushlazy is Empty
         case Spine(Empty(), rear) =>
           rear.weakZeroPreceedsLazy // here we have seen a zero
-        case Spine(h, rear) => 
-          rear.zeroPreceedsLazy  //here we have not seen a zero 
+        case Spine(h, rear) =>
+          rear.zeroPreceedsLazy //here we have not seen a zero 
         case Tip(_) => true
         case _ => false // this implies that a ConQ cannot start with a lazy closure
       }
     } ensuring (res => !res || weakZeroPreceedsLazy) //zeroPreceedsLazy is a stronger property
-    
+
     val weakZeroPreceedsLazy: Boolean = {
       this match {
         case Spine(h, PushLazy(_, q)) =>
           q.zeroPreceedsLazy
         case Spine(_, rear) =>
-          rear.weakZeroPreceedsLazy           
+          rear.weakZeroPreceedsLazy
         case Tip(_) => true
         case _ => false // this implies that a ConQ cannot start with a lazy closure
       }
@@ -71,20 +71,22 @@ object Conqueue {
 
     val valid = {
       zeroPreceedsLazy && pushLazyInv
-    }     
+    }
 
     val weakValid = {
       weakZeroPreceedsLazy && pushLazyInv
     }
 
     def firstLazyClosure: ConQ[T] = {
+      require(this.pushLazyInv)
       this match {
+        case Spine(_, pl: PushLazy[T]) => pl
         case Spine(_, tail) =>
           tail.firstLazyClosure
         case _ =>
           this
       }
-    } ensuring (res => !res.isSpine)
+    } ensuring (res => !res.isSpine && res.pushLazyInv)
 
     def suffix(sch: ConQ[T]): Boolean = { //checks if sch is a suffix of 'this'
       (this == sch) || {
@@ -107,21 +109,61 @@ object Conqueue {
   // a closure corresponding to 'push' operations
   case class PushLazy[T](ys: Conc[T], xs: Spine[T]) extends ConQ[T]
 
-  def queueScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
+  /*def queueScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
     xs.valid && sch.weakValid &&
       xs.firstLazyClosure == sch.firstLazyClosure && //sch is the first lazy closure of 's'
       xs.suffix(sch) //sch is a suffix of s
+  }*/
+
+  def queueScheduleProperty[T](xs: ConQ[T], sch: PushLazy[T]) = {
+    sch match {
+      case PushLazy(_, _) =>
+        xs.valid && xs.firstLazyClosure == sch //sch is the first lazy closure of 's'      
+      case _ => false
+    }
   }
 
-  def weakScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
+  /*def weakScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
     xs.weakValid && sch.weakValid &&
       xs.firstLazyClosure == sch.firstLazyClosure && //sch is the first lazy closure of 's'
       xs.suffix(sch) //sch is a suffix of s
+  }*/
+
+  def weakScheduleProperty[T](xs: ConQ[T], sch: PushLazy[T]) = {
+    sch match {
+      case PushLazy(_, _) =>
+        xs.weakValid && xs.firstLazyClosure == sch //sch is the first lazy closure of 's'
+      case _ => false
+    }
   }
 
-  case class Wrapper[T](queue: ConQ[T], schedule: ConQ[T]) {
+  def schedulesProperty[T](q: ConQ[T], schs: List[ConQ[T]]): Boolean = {
+    schs match {
+      case Cons(pl @ PushLazy(_, nestq), tail) =>
+        queueScheduleProperty(q, pl) &&
+          schedulesProperty(nestq, tail)
+      case Nil() =>
+        q.valid // here, for now we do not enforce that q should not have any closures.
+      case _ =>
+        false // other cases are not valid
+    }
+  }
+
+  def weakSchedulesProperty[T](q: ConQ[T], schs: List[ConQ[T]]): Boolean = {
+    schs match {
+      case Cons(pl @ PushLazy(_, nestq), tail) =>
+        weakScheduleProperty(q, pl) &&
+          schedulesProperty(nestq, tail)
+      case Nil() =>
+        q.valid
+      case _ =>
+        false
+    }
+  }
+
+  case class Wrapper[T](queue: ConQ[T], schedule: List[ConQ[T]]) {
     val valid: Boolean = {
-      queueScheduleProperty(queue, schedule)
+      schedulesProperty(queue, schedule)
     }
   }
 
@@ -166,7 +208,7 @@ object Conqueue {
     }
   } ensuring (res => res._1.isSpine &&
     (res._1.valid || (res._1.rear == xs.rear)) &&
-    (res._1.valid || (res._1.weakValid && res._1.firstLazyClosure == xs.firstLazyClosure)) &&
+    (res._1.valid || res._1.weakValid) &&
     res._2 <= 1) // this invariant implies that the result if invalid is of the form Spine(t, PushLazy(...)) 
 
   /**
@@ -174,63 +216,83 @@ object Conqueue {
    * ps in xs. Ideally, the second argument should include every
    * structure that may contain 'pl'.
    */
-  def materialize[T](mat: Spine[T], xs: ConQ[T]): (Spine[T], ConQ[T], BigInt) = {
-    require(weakScheduleProperty(xs, mat) && mat.rear.isLazy)
+  def materialize[T](mat: ConQ[T], xs: ConQ[T], schs: Cons[ConQ[T]]): (Spine[T], ConQ[T], BigInt) = {
+    require(weakSchedulesProperty(xs, schs) && schs.head == mat)
     mat match {
-      case Spine(h, PushLazy(elem, q)) =>
+      case PushLazy(elem, q) =>
         val (nr, t) = pushLeftLazy(elem, q)
-        (Spine(h, nr), updateReferences(xs, mat), t + 1)
+        (nr, updateReferences(xs, mat, schs), t + 1)
     }
-  } ensuring (res => queueScheduleProperty(res._2, res._1) && // a stronger property will be satisfied after materialization 
+  } ensuring (res => (res._1 match {
+    case Spine(_, pl @ PushLazy(_, _)) =>
+      schedulesProperty(res._2, Cons(pl, schs.tail))
+    case _ =>
+      schedulesProperty(res._2, schs.tail)
+  }) &&
     res._3 <= 2)
 
   /**
    * This does not take any time, by the definition of laziness
    */
-  def updateReferences[T](xs: ConQ[T], mat: Spine[T]): ConQ[T] = {
-    require(weakScheduleProperty(xs, mat) && mat.rear.isLazy)
+  def updateReferences[T](xs: ConQ[T], mat: ConQ[T], schs: Cons[ConQ[T]]): ConQ[T] = {
+    require(weakSchedulesProperty(xs, schs) && schs.head == mat)
     xs match {
-      case Spine(h, PushLazy(elem, q)) if (xs == mat) =>
+      case Spine(h, pl @ PushLazy(elem, q)) if (pl == mat) =>
         //ADT property implies that we need not search in the sub-structure 'q'.
         Spine(h, pushLeftLazy(elem, q)._1) //here, we can ignore the time, this only captures the semantics      
       case Spine(h, rear) => //here mat and xs cannot be equal, so look in the substructures        
-        Spine(h, updateReferences(rear, mat))
+        Spine(h, updateReferences(rear, mat, schs))
     }
   } ensuring (res => mat match {
-    case Spine(h, PushLazy(elem, q)) =>
-      queueScheduleProperty(res, Spine(h, pushLeftLazy(elem, q)._1)) // a stronger property will be satisfied here    
+    case PushLazy(elem, q) =>
+      pushLeftLazy(elem, q)._1 match {
+        case Spine(_, pl @ PushLazy(_, _)) =>
+          schedulesProperty(res, Cons(pl, schs.tail))
+        case _ =>
+          schedulesProperty(res, schs.tail)
+      }
+    //queueScheduleProperty(res, Spine(h, pushLeftLazy(elem, q)._1)) // a stronger property will be satisfied here    
   })
 
-  def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
+  /*def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
     require(w.valid)
-    
+
     val (nq, t1) = pushLeft(ys, w.queue) // the queue invariant could be temporarily broken
     // update the schedule
     val nsched = nq match {
-      case Spine(_, PushLazy(_, _)) => nq
-      case _ => w.schedule
+      case Spine(_, PushLazy(_, _)) => Cons[ConQ[T]](nq, w.schedule)
+      case _ =>
+        assert(schedulesProperty(w.queue, w.schedule))
+        w.schedule
     } //here, we need to ensure that new schedule is a suffix of the new queue    
     val (fsched, fq, t2) = pay(nsched, nq)
     (Wrapper(fq, fsched), t1 + t2 + 1)
-    
-  } ensuring(res => res._1.valid && res._2 <= 6)
 
-  def pay[T](sched: ConQ[T], xs: ConQ[T]): (ConQ[T], ConQ[T], BigInt) = {
-    require(queueScheduleProperty(xs, sched) ||
-      (sched match {
-        case Spine(_, PushLazy(_, _)) => 
-          weakScheduleProperty(xs, sched)
-        case _ => false        
-      }))
+  } //ensuring(res => res._1.valid && res._2 <= 6)
+
+  def pay[T](sched: List[ConQ[T]], xs: ConQ[T]): (List[ConQ[T]], ConQ[T], BigInt) = {
+    require(
+      //        /queueScheduleProperty(xs, sched) ||
+      sched match {
+        case Cons(s @ Spine(_, PushLazy(_, nestq)), tail) =>
+          weakScheduleProperty(xs, s) &&
+            schedulesProperty(nestq, tail)
+        case Nil() =>
+          xs.valid
+        case _ => false
+      })
     sched match {
-      case s @ Spine(_, PushLazy(_, _)) =>
+      case Cons(s @ Spine(_, PushLazy(_, nestq)), rest) =>
         val (Spine(_, matr), nxs, matt) = materialize(s, xs)
-        (matr, nxs, matt + 1)
-      case Spine(_, rear) =>
-        (rear, xs, 1)
-      case Tip(_) =>
-        (sched, xs, 1) // here every thing is concretized
+        matr match {
+          case Spine(_, PushLazy(_, _)) =>
+            (Cons(matr, rest), nxs, matt + 1)
+          case Spine(_, rear) =>
+            (rest, nxs, matt + 1)
+        }
+      case Nil() =>
+        (Nil(), xs, 1) // here every thing is concretized
     }
-  } ensuring (res => queueScheduleProperty(res._2, res._1) && 
-		  			res._3 <= 3)
+  }*/ /*ensuring (res => schedulesProperty(res._2, res._1) && 
+		  			res._3 <= 3)*/
 }
