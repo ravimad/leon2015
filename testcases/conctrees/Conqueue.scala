@@ -12,13 +12,6 @@ object Conqueue {
 
   sealed abstract class ConQ[T] {
 
-    /*def isTip: Boolean = {
-      this match {
-        case Tip(_) => true
-        case _ => false
-      }
-    }*/
-
     val isLazy: Boolean = this match {
       case PushLazy(_, _) => true
       case _ => false
@@ -63,11 +56,7 @@ object Conqueue {
         case Tip(_) => true
         case _ => false // this implies that a ConQ cannot start with a lazy closure
       }
-    } //ensuring (res => !zeroPreceedsLazy || res) //zeroPreceedsLazy is a stronger property
-
-    /*val spineInv = this match {
-      case 
-    }*/
+    }
 
     val valid = {
       zeroPreceedsLazy && pushLazyInv
@@ -77,7 +66,17 @@ object Conqueue {
       weakZeroPreceedsLazy && pushLazyInv
     }
 
-    def firstLazyClosure: ConQ[T] = {
+    val isConcrete: Boolean = {
+      this match {
+        case Spine(_, rear) =>
+          rear.isConcrete
+        case Tip(_) =>
+          true
+        case _ => false
+      }
+    } ensuring (res => !res || valid)
+
+    val firstLazyClosure: ConQ[T] = {
       require(this.pushLazyInv)
       this match {
         case Spine(_, pl: PushLazy[T]) => pl
@@ -109,12 +108,6 @@ object Conqueue {
   // a closure corresponding to 'push' operations
   case class PushLazy[T](ys: Conc[T], xs: Spine[T]) extends ConQ[T]
 
-  /*def queueScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
-    xs.valid && sch.weakValid &&
-      xs.firstLazyClosure == sch.firstLazyClosure && //sch is the first lazy closure of 's'
-      xs.suffix(sch) //sch is a suffix of s
-  }*/
-
   def queueScheduleProperty[T](xs: ConQ[T], sch: PushLazy[T]) = {
     sch match {
       case PushLazy(_, _) =>
@@ -122,12 +115,6 @@ object Conqueue {
       case _ => false
     }
   }
-
-  /*def weakScheduleProperty[T](xs: ConQ[T], sch: ConQ[T]) = {
-    xs.weakValid && sch.weakValid &&
-      xs.firstLazyClosure == sch.firstLazyClosure && //sch is the first lazy closure of 's'
-      xs.suffix(sch) //sch is a suffix of s
-  }*/
 
   def weakScheduleProperty[T](xs: ConQ[T], sch: PushLazy[T]) = {
     sch match {
@@ -143,7 +130,8 @@ object Conqueue {
         queueScheduleProperty(q, pl) &&
           schedulesProperty(nestq, tail)
       case Nil() =>
-        q.valid // here, for now we do not enforce that q should not have any closures.
+        //q.valid // here, for now we do not enforce that q should not have any closures.
+        q.isConcrete
       case _ =>
         false // other cases are not valid
     }
@@ -155,7 +143,8 @@ object Conqueue {
         weakScheduleProperty(q, pl) &&
           schedulesProperty(nestq, tail)
       case Nil() =>
-        q.valid
+        //q.valid
+        q.isConcrete
       case _ =>
         false
     }
@@ -206,10 +195,7 @@ object Conqueue {
             (Spine(Empty(), Spine(Empty(), Tip(CC(tree, carry)))), 1)
         }
     }
-  } ensuring (res => res._1.isSpine &&
-    (res._1.valid || (res._1.rear == xs.rear)) &&
-    (res._1.valid || res._1.weakValid) &&
-    res._2 <= 1) // this invariant implies that the result if invalid is of the form Spine(t, PushLazy(...)) 
+  } ensuring (res => res._1.isSpine && res._1.weakValid && res._2 <= 1)  
 
   /**
    * Materialize will evaluate ps and update the references to
@@ -251,29 +237,28 @@ object Conqueue {
         case _ =>
           schedulesProperty(res, schs.tail)
       }
-    //queueScheduleProperty(res, Spine(h, pushLeftLazy(elem, q)._1)) // a stronger property will be satisfied here    
   })
 
   def pushLeftAndPay[T](ys: Single[T], w: Wrapper[T]): (Wrapper[T], BigInt) = {
     require(w.valid)
-
     val (nq, t1) = pushLeft(ys, w.queue) // the queue invariant could be temporarily broken
     // update the schedule
     val nschs = nq match {
-      case Spine(_, PushLazy(_, nest)) =>
-        //assert(schedulesProperty(nest, w.schedule))
-        Cons[ConQ[T]](nq, w.schedule)                
+      case Spine(_, pl @ PushLazy(_, nest)) =>
+        w.queue match {
+          case Spine(head, rear) if !head.isEmpty =>
+            Cons[ConQ[T]](pl, w.schedule)
+          case _ =>
+            w.schedule
+        }
       case Tip(_) =>
-        //assert(weakSchedulesProperty(nq, w.schedule))
         w.schedule
-      case Spine(_, rear) =>               
+      case Spine(_, rear) =>
         w.schedule
-    }     
-    (w, 1)
-    /*val (fschs, fq, t2) = pay(nschs, nq)
-    (Wrapper(fq, fschs), t1 + t2 + 1)*/
-
-  } //ensuring(res => res._1.valid && res._2 <= 6)
+    }
+    val (fschs, fq, t2) = pay(nschs, nq)
+    (Wrapper(fq, fschs), t1 + t2 + 1)
+  } ensuring(res => res._1.valid && res._2 <= 6)
 
   def pay[T](schs: List[ConQ[T]], xs: ConQ[T]): (List[ConQ[T]], ConQ[T], BigInt) = {
     require(weakSchedulesProperty(xs, schs))
